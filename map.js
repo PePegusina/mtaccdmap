@@ -4,40 +4,32 @@ const MAP_HEIGHT = 6200;
 
 const map = L.map('map', {
     crs: L.CRS.Simple,
-    minZoom: -2,
+    minZoom: -3,
     maxZoom: 2,
     zoomControl: true,
-    // Жестко ограничиваем границы карты размерами изображения
     maxBounds: [[0, 0], [MAP_HEIGHT, MAP_WIDTH]],
-    maxBoundsViscosity: 1.0 // Полностью блокирует перетаскивание за пределы карты
+    maxBoundsViscosity: 1.0
 });
 
 const bounds = [[0, 0], [MAP_HEIGHT, MAP_WIDTH]];
 
-L.tileLayer('tiles/{z}/{x}/{y}.png', {
-    bounds: bounds,
-    maxZoom: 2,
-    minZoom: -2,
-    noWrap: true
-}).addTo(map);
+// Загружаем ОДНУ картинку вместо тайлов
+// Если оставил PNG, замени 'map.webp' на 'map.png'
+L.imageOverlay('map.webp', bounds).addTo(map);
 
-// КРИТИЧЕСКИ ВАЖНО: Центрируем карту строго в середину изображения.
-// Это предотвращает генерацию отрицательных индексов тайлов при зуме.
 map.setView([MAP_HEIGHT / 2, MAP_WIDTH / 2], 0);
 
 // === ХРАНЕНИЕ ДАННЫХ ===
 let markers = [];
-let pings = []; // Активные пинги: {id, lat, lng, timestamp, type}
+let pings = [];
 
-// Загрузка при старте
 loadMarkers();
 loadPings();
 
 // === МЕТКИ ===
 map.on('click', function(e) {
-    // Правый клик или Ctrl+клик — пинг, обычный клик — метка
     if (e.originalEvent.ctrlKey || e.originalEvent.button === 2) {
-        const type = document.getElementById('pingType').value;
+        const type = document.getElementById('pingType') ? document.getElementById('pingType').value : 'loot_cleared';
         addPing(e.latlng, type);
         return;
     }
@@ -55,7 +47,6 @@ map.on('click', function(e) {
     markers.push({ marker, name: '', note: '', lat: e.latlng.lat, lng: e.latlng.lng });
 });
 
-// Предотвращаем контекстное меню для правого клика (пинг)
 map.getContainer().addEventListener('contextmenu', e => e.preventDefault());
 
 function saveMarker(index) {
@@ -74,7 +65,6 @@ function deleteMarker(index) {
 }
 
 // === ПИНГИ ===
-// Типы пингов: loot_cleared (лут собран), respawn_wait (ждать респавн), danger (опасно)
 const PING_TYPES = {
     loot_cleared: { color: '#22c55e', label: 'Лут собран' },
     respawn_wait: { color: '#f59e0b', label: 'Ждать респавн' },
@@ -94,30 +84,21 @@ function addPing(latlng, type = 'loot_cleared') {
     renderPing(ping);
     savePings();
 
-    // Автоудаление пинга через 60 секунд
     setTimeout(() => removePing(ping.id), 60000);
 }
 
 function renderPing(ping) {
     const cfg = PING_TYPES[ping.type] || PING_TYPES.loot_cleared;
 
-    // Круговой маркер-пинг
     const circle = L.circleMarker([ping.lat, ping.lng], {
         radius: 12,
         fillColor: cfg.color,
         color: '#fff',
         weight: 2,
-        fillOpacity: 0.8,
-        className: 'ping-marker'
+        fillOpacity: 0.8
     }).addTo(map);
 
     circle.bindTooltip(cfg.label, { permanent: false, direction: 'top' });
-
-    // Анимация затухания через CSS (добавляется в styles.css)
-    const el = circle.getElement();
-    if (el) el.classList.add('ping-animate');
-
-    // Сохраняем ссылку для удаления
     ping._layer = circle;
 }
 
@@ -147,7 +128,6 @@ function loadMarkers() {
 }
 
 function savePings() {
-    // Сохраняем только активные пинги (без _layer)
     const data = pings.map(p => ({ id: p.id, lat: p.lat, lng: p.lng, timestamp: p.timestamp, type: p.type }));
     localStorage.setItem('pings', JSON.stringify(data));
 }
@@ -157,7 +137,6 @@ function loadPings() {
     if (!data) return;
     const now = Date.now();
     JSON.parse(data).forEach(p => {
-        // Пропускаем просроченные пинги (>60 сек)
         if (now - p.timestamp > 60000) return;
         pings.push(p);
         renderPing(p);
@@ -165,7 +144,7 @@ function loadPings() {
     });
 }
 
-// === ЭКСПОРТ / ИМПОРТ МЕТОК ===
+// === ЭКСПОРТ / ИМПОРТ ===
 function exportMarkers() {
     const data = markers.map(m => ({ name: m.name, note: m.note, lat: m.lat, lng: m.lng }));
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
