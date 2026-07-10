@@ -29,7 +29,7 @@ document.getElementById('authPassword').addEventListener('keypress', (e) => {
 
 // === КОНФИГУРАЦИЯ КАРТЫ ===
 const MAP_WIDTH = 6200;
-const MAP_HEIGHT = 6200;
+const MAP_HEIGHT = 4650;
 
 const map = L.map('map', {
     crs: L.CRS.Simple,
