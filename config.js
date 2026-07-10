@@ -1,14 +1,5 @@
-// Проверяем, загрузился ли SDK
-if (typeof window.supabase === 'undefined') {
-    console.error('Supabase SDK не загружен! Проверь порядок скриптов в index.html');
-} else {
-    console.log('Supabase SDK загружен успешно');
-}
-
-// Создаем клиент
+// Инициализация клиента Supabase с новым форматом ключей (sb_publishable)
 const sb = window.supabase.createClient(
     'https://jgbevmpurdyhkbibatjy.supabase.co',
-    'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpnYmV2bXB1cmR5aGtiaWJhdGp5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODM3MDMyMDUsImV4cCI6MjA5OTI3OTIwNX0.17qogBz5NJAeP4ktCBn929R_X3U4Ch4C0AujN53sCwI'
+    'sb_publishable_qnhHdyIcbpbP6E82ip9Acw_c18NW2ec'
 );
-
-console.log('Клиент Supabase создан:', sb);
