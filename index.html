@@ -19,13 +19,7 @@
         <button onclick="exportMarkers()">Экспорт меток</button>
         <label>Импорт меток<input type="file" id="importFile" accept=".json" onchange="importMarkers(event)"></label>
         <button onclick="clearMarkers()">Очистить все</button>
-        <hr>
-        <small>Ctrl+Клик — пинг</small>
-        <select id="pingType" style="display:block;margin-top:5px;width:100%;">
-            <option value="loot_cleared">Лут собран</option>
-            <option value="respawn_wait">Ждать респавн</option>
-            <option value="danger">Опасно!</option>
-        </select>
+        <option value="loot_cleared">Лут собран</option>
     </div>
 
     <!-- Leaflet JS -->

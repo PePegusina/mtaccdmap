@@ -29,8 +29,7 @@ loadPings();
 // === МЕТКИ ===
 map.on('click', function(e) {
     if (e.originalEvent.ctrlKey || e.originalEvent.button === 2) {
-        const type = document.getElementById('pingType') ? document.getElementById('pingType').value : 'loot_cleared';
-        addPing(e.latlng, type);
+        addPing(e.latlng);
         return;
     }
 
@@ -65,40 +64,34 @@ function deleteMarker(index) {
 }
 
 // === ПИНГИ ===
-const PING_TYPES = {
-    loot_cleared: { color: '#22c55e', label: 'Лут собран' },
-    respawn_wait: { color: '#f59e0b', label: 'Ждать респавн' },
-    danger:       { color: '#ef4444', label: 'Опасно!' }
-};
+const PING_DURATION = 300000; // 5 минут в миллисекундах
+const PING_COLOR = '#9ca3af'; // Серый цвет
 
-function addPing(latlng, type = 'loot_cleared') {
+function addPing(latlng) {
     const ping = {
         id: Date.now() + Math.random(),
         lat: latlng.lat,
         lng: latlng.lng,
-        timestamp: Date.now(),
-        type: type
+        timestamp: Date.now()
     };
 
     pings.push(ping);
     renderPing(ping);
     savePings();
 
-    setTimeout(() => removePing(ping.id), 60000);
+    setTimeout(() => removePing(ping.id), PING_DURATION);
 }
 
 function renderPing(ping) {
-    const cfg = PING_TYPES[ping.type] || PING_TYPES.loot_cleared;
-
     const circle = L.circleMarker([ping.lat, ping.lng], {
-        radius: 12,
-        fillColor: cfg.color,
+        radius: 14,
+        fillColor: PING_COLOR,
         color: '#fff',
         weight: 2,
-        fillOpacity: 0.8
+        fillOpacity: 0.9
     }).addTo(map);
 
-    circle.bindTooltip(cfg.label, { permanent: false, direction: 'top' });
+    circle.bindTooltip('Лут собран', { permanent: false, direction: 'top' });
     ping._layer = circle;
 }
 
@@ -111,24 +104,8 @@ function removePing(id) {
     }
 }
 
-// === СОХРАНЕНИЕ / ЗАГРУЗКА ===
-function saveToLocalStorage() {
-    const data = markers.map(m => ({ name: m.name, note: m.note, lat: m.lat, lng: m.lng }));
-    localStorage.setItem('markers', JSON.stringify(data));
-}
-
-function loadMarkers() {
-    const data = localStorage.getItem('markers');
-    if (!data) return;
-    JSON.parse(data).forEach(m => {
-        const marker = L.marker([m.lat, m.lng]).addTo(map);
-        marker.bindPopup(`<b>${m.name}</b><br>${m.note}`);
-        markers.push({ marker, name: m.name, note: m.note, lat: m.lat, lng: m.lng });
-    });
-}
-
 function savePings() {
-    const data = pings.map(p => ({ id: p.id, lat: p.lat, lng: p.lng, timestamp: p.timestamp, type: p.type }));
+    const data = pings.map(p => ({ id: p.id, lat: p.lat, lng: p.lng, timestamp: p.timestamp }));
     localStorage.setItem('pings', JSON.stringify(data));
 }
 
@@ -137,10 +114,10 @@ function loadPings() {
     if (!data) return;
     const now = Date.now();
     JSON.parse(data).forEach(p => {
-        if (now - p.timestamp > 60000) return;
+        if (now - p.timestamp > PING_DURATION) return;
         pings.push(p);
         renderPing(p);
-        setTimeout(() => removePing(p.id), 60000 - (now - p.timestamp));
+        setTimeout(() => removePing(p.id), PING_DURATION - (now - p.timestamp));
     });
 }
 
