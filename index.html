@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MTA Map</title>
+
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+
+    <!-- Свои стили -->
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div id="map"></div>
+
+    <!-- Панель управления -->
+    <div id="controls">
+        <button onclick="exportMarkers()">Экспорт меток</button>
+        <label>
+            Импорт меток
+            <input type="file" id="importFile" accept=".json" onchange="importMarkers(event)">
+        </label>
+        <button onclick="clearMarkers()">Очистить все</button>
+    </div>
+
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <!-- Свой скрипт -->
+    <script src="map.js"></script>
+</body>
+</html>
