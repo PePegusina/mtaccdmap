@@ -11,6 +11,14 @@
     <!-- Свои стили -->
     <link rel="stylesheet" href="styles.css">
 </head>
+<!-- Supabase SDK -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+<!-- Конфиг Supabase -->
+<script src="config.js"></script>
+
+<!-- Свой скрипт -->
+<script src="map.js"></script>
 <body>
     <div id="map"></div>
 
@@ -19,7 +27,6 @@
         <button onclick="exportMarkers()">Экспорт меток</button>
         <label>Импорт меток<input type="file" id="importFile" accept=".json" onchange="importMarkers(event)"></label>
         <button onclick="clearMarkers()">Очистить все</button>
-        <option value="loot_cleared">Лут собран</option>
     </div>
 
     <!-- Leaflet JS -->

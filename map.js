@@ -12,118 +12,267 @@ const map = L.map('map', {
 });
 
 const bounds = [[0, 0], [MAP_HEIGHT, MAP_WIDTH]];
-
-// Загружаем ОДНУ картинку вместо тайлов
-// Если оставил PNG, замени 'map.webp' на 'map.png'
 L.imageOverlay('map.webp', bounds).addTo(map);
-
 map.setView([MAP_HEIGHT / 2, MAP_WIDTH / 2], 0);
 
 // === ХРАНЕНИЕ ДАННЫХ ===
-let markers = [];
-let pings = [];
+let markers = []; // {id, marker, name, note, lat, lng}
+let pings = [];   // {id, lat, lng, _layer, timeoutId}
 
-loadMarkers();
-loadPings();
+const PING_DURATION = 300000; // 5 минут
+
+// === ИНИЦИАЛИЗАЦИЯ ===
+async function init() {
+    await loadMarkers();
+    await loadPings();
+    setupRealtimeSubscriptions();
+}
+
+init();
 
 // === МЕТКИ ===
-map.on('click', function(e) {
+map.on('click', async function(e) {
     if (e.originalEvent.ctrlKey || e.originalEvent.button === 2) {
-        addPing(e.latlng);
+        await addPing(e.latlng);
         return;
     }
 
     const marker = L.marker(e.latlng).addTo(map);
-    const idx = markers.length;
+    const tempId = Date.now();
 
     marker.bindPopup(`
         <input type="text" id="markerName" placeholder="Название" style="width:200px;"><br>
         <textarea id="markerNote" placeholder="Заметка" style="width:200px;height:60px;"></textarea><br>
-        <button onclick="saveMarker(${idx})">Сохранить</button>
-        <button onclick="deleteMarker(${idx})">Удалить</button>
+        <button onclick="saveMarker('${tempId}')">Сохранить</button>
+        <button onclick="deleteMarker('${tempId}')">Удалить</button>
     `);
 
-    markers.push({ marker, name: '', note: '', lat: e.latlng.lat, lng: e.latlng.lng });
+    markers.push({ id: tempId, marker, name: '', note: '', lat: e.latlng.lat, lng: e.latlng.lng });
 });
 
 map.getContainer().addEventListener('contextmenu', e => e.preventDefault());
 
-function saveMarker(index) {
+async function saveMarker(tempId) {
+    const idx = markers.findIndex(m => m.id == tempId);
+    if (idx === -1) return;
+
     const name = document.getElementById('markerName').value;
     const note = document.getElementById('markerNote').value;
-    markers[index].name = name;
-    markers[index].note = note;
-    markers[index].marker.setPopupContent(`<b>${name}</b><br>${note}`);
-    saveToLocalStorage();
+
+    // Сохраняем в Supabase
+    const { data, error } = await supabase
+        .from('markers')
+        .insert([{
+            name: name,
+            note: note,
+            lat: markers[idx].lat,
+            lng: markers[idx].lng
+        }])
+        .select()
+        .single();
+
+    if (error) {
+        console.error('Error saving marker:', error);
+        return;
+    }
+
+    // Обновляем локальный массив с реальным ID
+    markers[idx].id = data.id;
+    markers[idx].name = name;
+    markers[idx].note = note;
+    markers[idx].marker.setPopupContent(`<b>${name}</b><br>${note}`);
 }
 
-function deleteMarker(index) {
-    map.removeLayer(markers[index].marker);
-    markers.splice(index, 1);
-    saveToLocalStorage();
+async function deleteMarker(id) {
+    const idx = markers.findIndex(m => m.id == id);
+    if (idx === -1) return;
+
+    // Удаляем из Supabase (только если это реальный UUID, а не tempId)
+    if (typeof id === 'string' && id.length === 36) {
+        await supabase.from('markers').delete().eq('id', id);
+    }
+
+    map.removeLayer(markers[idx].marker);
+    markers.splice(idx, 1);
 }
 
 // === ПИНГИ ===
-const PING_DURATION = 300000; // 5 минут в миллисекундах
-const PING_COLOR = '#9ca3af'; // Серый цвет
+async function addPing(latlng) {
+    const { data, error } = await supabase
+        .from('pings')
+        .insert([{ lat: latlng.lat, lng: latlng.lng }])
+        .select()
+        .single();
 
-function addPing(latlng) {
-    const ping = {
-        id: Date.now() + Math.random(),
-        lat: latlng.lat,
-        lng: latlng.lng,
-        timestamp: Date.now()
-    };
+    if (error) {
+        console.error('Error adding ping:', error);
+        return;
+    }
 
-    pings.push(ping);
-    renderPing(ping);
-    savePings();
-
-    setTimeout(() => removePing(ping.id), PING_DURATION);
+    // Пинг отрендерится через Realtime подписку
 }
 
-function renderPing(ping) {
-    const circle = L.circleMarker([ping.lat, ping.lng], {
+function renderPing(pingData) {
+    // Проверяем, не добавлен ли уже этот пинг
+    if (pings.some(p => p.id === pingData.id)) return;
+
+    const circle = L.circleMarker([pingData.lat, pingData.lng], {
         radius: 14,
-        fillColor: PING_COLOR,
+        fillColor: '#9ca3af',
         color: '#fff',
         weight: 2,
         fillOpacity: 0.9
     }).addTo(map);
 
     circle.bindTooltip('Лут собран', { permanent: false, direction: 'top' });
-    ping._layer = circle;
-}
 
-function removePing(id) {
-    const idx = pings.findIndex(p => p.id === id);
-    if (idx !== -1) {
-        if (pings[idx]._layer) map.removeLayer(pings[idx]._layer);
-        pings.splice(idx, 1);
-        savePings();
-    }
-}
+    const timeoutId = setTimeout(() => removePing(pingData.id), PING_DURATION);
 
-function savePings() {
-    const data = pings.map(p => ({ id: p.id, lat: p.lat, lng: p.lng, timestamp: p.timestamp }));
-    localStorage.setItem('pings', JSON.stringify(data));
-}
-
-function loadPings() {
-    const data = localStorage.getItem('pings');
-    if (!data) return;
-    const now = Date.now();
-    JSON.parse(data).forEach(p => {
-        if (now - p.timestamp > PING_DURATION) return;
-        pings.push(p);
-        renderPing(p);
-        setTimeout(() => removePing(p.id), PING_DURATION - (now - p.timestamp));
+    pings.push({
+        id: pingData.id,
+        lat: pingData.lat,
+        lng: pingData.lng,
+        _layer: circle,
+        timeoutId: timeoutId
     });
 }
 
+async function removePing(id) {
+    const idx = pings.findIndex(p => p.id === id);
+    if (idx === -1) return;
+
+    if (pings[idx]._layer) map.removeLayer(pings[idx]._layer);
+    if (pings[idx].timeoutId) clearTimeout(pings[idx].timeoutId);
+
+    pings.splice(idx, 1);
+
+    // Удаляем из базы
+    await supabase.from('pings').delete().eq('id', id);
+}
+
+// === ЗАГРУЗКА ИЗ SUPABASE ===
+async function loadMarkers() {
+    const { data, error } = await supabase.from('markers').select('*');
+    if (error) {
+        console.error('Error loading markers:', error);
+        return;
+    }
+
+    data.forEach(m => {
+        const marker = L.marker([m.lat, m.lng]).addTo(map);
+        marker.bindPopup(`<b>${m.name}</b><br>${m.note}`);
+        markers.push({
+            id: m.id,
+            marker: marker,
+            name: m.name,
+            note: m.note,
+            lat: m.lat,
+            lng: m.lng
+        });
+    });
+}
+
+async function loadPings() {
+    const { data, error } = await supabase.from('pings').select('*');
+    if (error) {
+        console.error('Error loading pings:', error);
+        return;
+    }
+
+    const now = Date.now();
+    data.forEach(p => {
+        const age = now - new Date(p.created_at).getTime();
+        if (age > PING_DURATION) {
+            // Удаляем старые пинги
+            supabase.from('pings').delete().eq('id', p.id);
+            return;
+        }
+
+        const remainingTime = PING_DURATION - age;
+        const circle = L.circleMarker([p.lat, p.lng], {
+            radius: 14,
+            fillColor: '#9ca3af',
+            color: '#fff',
+            weight: 2,
+            fillOpacity: 0.9
+        }).addTo(map);
+
+        circle.bindTooltip('Лут собран', { permanent: false, direction: 'top' });
+
+        const timeoutId = setTimeout(() => removePing(p.id), remainingTime);
+
+        pings.push({
+            id: p.id,
+            lat: p.lat,
+            lng: p.lng,
+            _layer: circle,
+            timeoutId: timeoutId
+        });
+    });
+}
+
+// === REALTIME ПОДПИСКИ ===
+function setupRealtimeSubscriptions() {
+    // Подписка на метки
+    supabase
+        .channel('markers-channel')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'markers' }, (payload) => {
+            if (payload.eventType === 'INSERT') {
+                const m = payload.new;
+                if (!markers.some(mark => mark.id === m.id)) {
+                    const marker = L.marker([m.lat, m.lng]).addTo(map);
+                    marker.bindPopup(`<b>${m.name}</b><br>${m.note}`);
+                    markers.push({
+                        id: m.id,
+                        marker: marker,
+                        name: m.name,
+                        note: m.note,
+                        lat: m.lat,
+                        lng: m.lng
+                    });
+                }
+            } else if (payload.eventType === 'DELETE') {
+                const idx = markers.findIndex(mark => mark.id === payload.old.id);
+                if (idx !== -1) {
+                    map.removeLayer(markers[idx].marker);
+                    markers.splice(idx, 1);
+                }
+            } else if (payload.eventType === 'UPDATE') {
+                const idx = markers.findIndex(mark => mark.id === payload.new.id);
+                if (idx !== -1) {
+                    markers[idx].name = payload.new.name;
+                    markers[idx].note = payload.new.note;
+                    markers[idx].marker.setPopupContent(`<b>${payload.new.name}</b><br>${payload.new.note}`);
+                }
+            }
+        })
+        .subscribe();
+
+    // Подписка на пинги
+    supabase
+        .channel('pings-channel')
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'pings' }, (payload) => {
+            renderPing(payload.new);
+        })
+        .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'pings' }, (payload) => {
+            const idx = pings.findIndex(p => p.id === payload.old.id);
+            if (idx !== -1) {
+                if (pings[idx]._layer) map.removeLayer(pings[idx]._layer);
+                if (pings[idx].timeoutId) clearTimeout(pings[idx].timeoutId);
+                pings.splice(idx, 1);
+            }
+        })
+        .subscribe();
+}
+
 // === ЭКСПОРТ / ИМПОРТ ===
-function exportMarkers() {
-    const data = markers.map(m => ({ name: m.name, note: m.note, lat: m.lat, lng: m.lng }));
+async function exportMarkers() {
+    const { data, error } = await supabase.from('markers').select('*');
+    if (error) {
+        console.error('Error exporting markers:', error);
+        return;
+    }
+
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -133,27 +282,36 @@ function exportMarkers() {
     URL.revokeObjectURL(url);
 }
 
-function importMarkers(event) {
+async function importMarkers(event) {
     const file = event.target.files[0];
     if (!file) return;
+
     const reader = new FileReader();
-    reader.onload = function(e) {
+    reader.onload = async function(e) {
         const data = JSON.parse(e.target.result);
-        markers.forEach(m => map.removeLayer(m.marker));
+
+        // Очищаем текущие метки
+        for (const m of markers) {
+            await supabase.from('markers').delete().eq('id', m.id);
+            map.removeLayer(m.marker);
+        }
         markers = [];
-        data.forEach(m => {
-            const marker = L.marker([m.lat, m.lng]).addTo(map);
-            marker.bindPopup(`<b>${m.name}</b><br>${m.note}`);
-            markers.push({ marker, name: m.name, note: m.note, lat: m.lat, lng: m.lng });
-        });
-        saveToLocalStorage();
+
+        // Импортируем новые
+        const { error } = await supabase.from('markers').insert(data);
+        if (error) {
+            console.error('Error importing markers:', error);
+        }
     };
     reader.readAsText(file);
 }
 
-function clearMarkers() {
+async function clearMarkers() {
     if (!confirm('Удалить все метки?')) return;
-    markers.forEach(m => map.removeLayer(m.marker));
+
+    for (const m of markers) {
+        await supabase.from('markers').delete().eq('id', m.id);
+        map.removeLayer(m.marker);
+    }
     markers = [];
-    localStorage.removeItem('markers');
 }
