@@ -7,30 +7,32 @@
 
     <!-- Leaflet CSS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-
     <!-- Свои стили -->
     <link rel="stylesheet" href="styles.css">
 </head>
-<!-- Supabase SDK -->
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-
-<!-- Конфиг Supabase -->
-<script src="config.js"></script>
-
-<!-- Свой скрипт -->
-<script src="map.js"></script>
 <body>
     <div id="map"></div>
 
     <!-- Панель управления -->
     <div id="controls">
         <button onclick="exportMarkers()">Экспорт меток</button>
-        <label>Импорт меток<input type="file" id="importFile" accept=".json" onchange="importMarkers(event)"></label>
+        <label>
+            Импорт меток
+            <input type="file" id="importFile" accept=".json" onchange="importMarkers(event)">
+        </label>
         <button onclick="clearMarkers()">Очистить все</button>
+        <hr>
+        <small>Ctrl+Клик — лут собран (5 мин)</small>
     </div>
 
     <!-- Leaflet JS -->
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <!-- Supabase SDK -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+    <!-- Конфиг Supabase (создай этот файл отдельно) -->
+    <script src="config.js"></script>
 
     <!-- Свой скрипт -->
     <script src="map.js"></script>

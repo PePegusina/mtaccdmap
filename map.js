@@ -12,14 +12,17 @@ const map = L.map('map', {
 });
 
 const bounds = [[0, 0], [MAP_HEIGHT, MAP_WIDTH]];
+
+// Загружаем изображение карты. Если у тебя PNG, замени 'map.webp' на 'map.png'
 L.imageOverlay('map.webp', bounds).addTo(map);
+
 map.setView([MAP_HEIGHT / 2, MAP_WIDTH / 2], 0);
 
 // === ХРАНЕНИЕ ДАННЫХ ===
 let markers = []; // {id, marker, name, note, lat, lng}
 let pings = [];   // {id, lat, lng, _layer, timeoutId}
 
-const PING_DURATION = 300000; // 5 минут
+const PING_DURATION = 300000; // 5 минут в миллисекундах
 
 // === ИНИЦИАЛИЗАЦИЯ ===
 async function init() {
@@ -60,7 +63,7 @@ async function saveMarker(tempId) {
     const note = document.getElementById('markerNote').value;
 
     // Сохраняем в Supabase
-    const { data, error } = await supabase
+    const { data, error } = await sb
         .from('markers')
         .insert([{
             name: name,
@@ -73,10 +76,11 @@ async function saveMarker(tempId) {
 
     if (error) {
         console.error('Error saving marker:', error);
+        alert('Ошибка сохранения метки');
         return;
     }
 
-    // Обновляем локальный массив с реальным ID
+    // Обновляем локальный массив с реальным ID из базы
     markers[idx].id = data.id;
     markers[idx].name = name;
     markers[idx].note = note;
@@ -87,9 +91,9 @@ async function deleteMarker(id) {
     const idx = markers.findIndex(m => m.id == id);
     if (idx === -1) return;
 
-    // Удаляем из Supabase (только если это реальный UUID, а не tempId)
+    // Удаляем из Supabase (только если это реальный UUID)
     if (typeof id === 'string' && id.length === 36) {
-        await supabase.from('markers').delete().eq('id', id);
+        await sb.from('markers').delete().eq('id', id);
     }
 
     map.removeLayer(markers[idx].marker);
@@ -98,7 +102,7 @@ async function deleteMarker(id) {
 
 // === ПИНГИ ===
 async function addPing(latlng) {
-    const { data, error } = await supabase
+    const { data, error } = await sb
         .from('pings')
         .insert([{ lat: latlng.lat, lng: latlng.lng }])
         .select()
@@ -108,7 +112,6 @@ async function addPing(latlng) {
         console.error('Error adding ping:', error);
         return;
     }
-
     // Пинг отрендерится через Realtime подписку
 }
 
@@ -118,7 +121,7 @@ function renderPing(pingData) {
 
     const circle = L.circleMarker([pingData.lat, pingData.lng], {
         radius: 14,
-        fillColor: '#9ca3af',
+        fillColor: '#9ca3af', // Серый цвет
         color: '#fff',
         weight: 2,
         fillOpacity: 0.9
@@ -147,12 +150,12 @@ async function removePing(id) {
     pings.splice(idx, 1);
 
     // Удаляем из базы
-    await supabase.from('pings').delete().eq('id', id);
+    await sb.from('pings').delete().eq('id', id);
 }
 
 // === ЗАГРУЗКА ИЗ SUPABASE ===
 async function loadMarkers() {
-    const { data, error } = await supabase.from('markers').select('*');
+    const { data, error } = await sb.from('markers').select('*');
     if (error) {
         console.error('Error loading markers:', error);
         return;
@@ -173,7 +176,7 @@ async function loadMarkers() {
 }
 
 async function loadPings() {
-    const { data, error } = await supabase.from('pings').select('*');
+    const { data, error } = await sb.from('pings').select('*');
     if (error) {
         console.error('Error loading pings:', error);
         return;
@@ -183,8 +186,8 @@ async function loadPings() {
     data.forEach(p => {
         const age = now - new Date(p.created_at).getTime();
         if (age > PING_DURATION) {
-            // Удаляем старые пинги
-            supabase.from('pings').delete().eq('id', p.id);
+            // Удаляем старые пинги из базы
+            sb.from('pings').delete().eq('id', p.id);
             return;
         }
 
@@ -214,7 +217,7 @@ async function loadPings() {
 // === REALTIME ПОДПИСКИ ===
 function setupRealtimeSubscriptions() {
     // Подписка на метки
-    supabase
+    sb
         .channel('markers-channel')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'markers' }, (payload) => {
             if (payload.eventType === 'INSERT') {
@@ -249,7 +252,7 @@ function setupRealtimeSubscriptions() {
         .subscribe();
 
     // Подписка на пинги
-    supabase
+    sb
         .channel('pings-channel')
         .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'pings' }, (payload) => {
             renderPing(payload.new);
@@ -267,7 +270,7 @@ function setupRealtimeSubscriptions() {
 
 // === ЭКСПОРТ / ИМПОРТ ===
 async function exportMarkers() {
-    const { data, error } = await supabase.from('markers').select('*');
+    const { data, error } = await sb.from('markers').select('*');
     if (error) {
         console.error('Error exporting markers:', error);
         return;
@@ -292,15 +295,16 @@ async function importMarkers(event) {
 
         // Очищаем текущие метки
         for (const m of markers) {
-            await supabase.from('markers').delete().eq('id', m.id);
+            await sb.from('markers').delete().eq('id', m.id);
             map.removeLayer(m.marker);
         }
         markers = [];
 
         // Импортируем новые
-        const { error } = await supabase.from('markers').insert(data);
+        const { error } = await sb.from('markers').insert(data);
         if (error) {
             console.error('Error importing markers:', error);
+            alert('Ошибка импорта');
         }
     };
     reader.readAsText(file);
@@ -310,7 +314,7 @@ async function clearMarkers() {
     if (!confirm('Удалить все метки?')) return;
 
     for (const m of markers) {
-        await supabase.from('markers').delete().eq('id', m.id);
+        await sb.from('markers').delete().eq('id', m.id);
         map.removeLayer(m.marker);
     }
     markers = [];
