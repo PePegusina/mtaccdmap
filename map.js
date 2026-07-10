@@ -2,18 +2,14 @@
 const MAP_WIDTH = 6200;
 const MAP_HEIGHT = 6200;
 
-// Исправленный CRS.Simple: сдвигает начало координат, чтобы индексы тайлов были >= 0
-const crs = L.extend({}, L.CRS.Simple, {
-    transformation: new L.Transformation(1, 0, -1, MAP_HEIGHT),
-    scale: function(zoom) { return Math.pow(2, zoom); },
-    zoom: function(scale) { return Math.log(scale) / Math.LN2; }
-});
-
 const map = L.map('map', {
-    crs: crs,
+    crs: L.CRS.Simple,
     minZoom: -2,
     maxZoom: 2,
-    zoomControl: true
+    zoomControl: true,
+    // Жестко ограничиваем границы карты размерами изображения
+    maxBounds: [[0, 0], [MAP_HEIGHT, MAP_WIDTH]],
+    maxBoundsViscosity: 1.0 // Полностью блокирует перетаскивание за пределы карты
 });
 
 const bounds = [[0, 0], [MAP_HEIGHT, MAP_WIDTH]];
@@ -25,7 +21,9 @@ L.tileLayer('tiles/{z}/{x}/{y}.png', {
     noWrap: true
 }).addTo(map);
 
-map.fitBounds(bounds);
+// КРИТИЧЕСКИ ВАЖНО: Центрируем карту строго в середину изображения.
+// Это предотвращает генерацию отрицательных индексов тайлов при зуме.
+map.setView([MAP_HEIGHT / 2, MAP_WIDTH / 2], 0);
 
 // === ХРАНЕНИЕ ДАННЫХ ===
 let markers = [];
