@@ -2,6 +2,7 @@ body, html {
     margin: 0;
     padding: 0;
     height: 100%;
+    font-family: sans-serif;
 }
 
 #map {
@@ -18,7 +19,7 @@ body, html {
     padding: 10px;
     border-radius: 5px;
     box-shadow: 0 2px 5px rgba(0,0,0,0.3);
-    font-family: sans-serif;
+    max-width: 220px;
 }
 
 #controls button {
@@ -27,6 +28,7 @@ body, html {
     padding: 8px 12px;
     cursor: pointer;
     width: 100%;
+    box-sizing: border-box;
 }
 
 #controls label {
@@ -40,12 +42,56 @@ body, html {
     margin-top: 5px;
 }
 
-/* Анимация пинга */
-.ping-animate {
-    animation: ping-pulse 1.5s ease-out infinite;
+#controls small {
+    display: block;
+    margin-top: 8px;
+    color: #666;
+    font-size: 11px;
+    line-height: 1.4;
 }
 
-@keyframes ping-pulse {
-    0%   { opacity: 1; transform: scale(1); }
-    100% { opacity: 0; transform: scale(2.5); }
+/* Оверлей авторизации */
+#authOverlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.85);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 9999;
+}
+
+.auth-box {
+    background: white;
+    padding: 30px;
+    border-radius: 8px;
+    text-align: center;
+    min-width: 300px;
+}
+
+.auth-box h2 {
+    margin-top: 0;
+}
+
+.auth-box input {
+    display: block;
+    width: 100%;
+    padding: 10px;
+    margin: 15px 0;
+    box-sizing: border-box;
+    font-size: 16px;
+}
+
+.auth-box button {
+    padding: 10px 20px;
+    font-size: 16px;
+    cursor: pointer;
+    width: 100%;
+}
+
+#authOverlay.hidden {
+    display: none;
 }

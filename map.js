@@ -1,6 +1,37 @@
+// === АВТОРИЗАЦИЯ ===
+function checkAuth() {
+    const input = document.getElementById('authPassword');
+    const error = document.getElementById('authError');
+
+    if (input.value === SITE_PASSWORD) {
+        localStorage.setItem('map_auth', 'true');
+        document.getElementById('authOverlay').classList.add('hidden');
+        error.style.display = 'none';
+    } else {
+        error.style.display = 'block';
+        input.value = '';
+    }
+}
+
+function logout() {
+    localStorage.removeItem('map_auth');
+    document.getElementById('authOverlay').classList.remove('hidden');
+    document.getElementById('authPassword').value = '';
+}
+
+// Проверка при загрузке
+if (localStorage.getItem('map_auth') === 'true') {
+    document.getElementById('authOverlay').classList.add('hidden');
+}
+
+// Enter в поле пароля
+document.getElementById('authPassword').addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') checkAuth();
+});
+
 // === КОНФИГУРАЦИЯ КАРТЫ ===
 const MAP_WIDTH = 6200;
-const MAP_HEIGHT = 6200;
+const MAP_HEIGHT = 4650;
 
 const map = L.map('map', {
     crs: L.CRS.Simple,
@@ -23,10 +54,39 @@ const PING_DURATION = 300000; // 5 минут
 // === ИНИЦИАЛИЗАЦИЯ ===
 setupFirebaseListeners();
 
-// === ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ===
+// === СЖАТИЕ КАРТИНОК ===
+function fileToCompressedDataURL(file, maxWidth = 800, quality = 0.7) {
+    return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const img = new Image();
+            img.onload = () => {
+                const canvas = document.createElement('canvas');
+                let width = img.width;
+                let height = img.height;
+                if (width > maxWidth) {
+                    height = (maxWidth / width) * height;
+                    width = maxWidth;
+                }
+                canvas.width = width;
+                canvas.height = height;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0, width, height);
+                resolve(canvas.toDataURL('image/jpeg', quality));
+            };
+            img.src = e.target.result;
+        };
+        reader.readAsDataURL(file);
+    });
+}
 
 // === МЕТКИ ===
 map.on('click', async function(e) {
+    if (localStorage.getItem('map_auth') !== 'true') {
+        alert('Войдите на сайт, чтобы взаимодействовать с картой');
+        return;
+    }
+
     if (e.originalEvent.ctrlKey || e.originalEvent.button === 2) {
         addPing(e.latlng);
         return;
@@ -35,7 +95,6 @@ map.on('click', async function(e) {
     const marker = L.marker(e.latlng).addTo(map);
     const tempId = 'temp_' + Date.now();
 
-    // Добавлено поле для выбора файла (скриншота)
     marker.bindPopup(`
         <input type="text" id="markerName" placeholder="Название" style="width:200px;"><br>
         <textarea id="markerNote" placeholder="Заметка" style="width:200px;height:60px;"></textarea><br>
@@ -49,37 +108,6 @@ map.on('click', async function(e) {
 
 map.getContainer().addEventListener('contextmenu', e => e.preventDefault());
 
-// Функция конвертации файла в сжатый Base64 (Data URL)
-function fileToCompressedDataURL(file, maxWidth = 800, quality = 0.7) {
-    return new Promise((resolve) => {
-        const reader = new FileReader();
-        reader.onload = (e) => {
-            const img = new Image();
-            img.onload = () => {
-                const canvas = document.createElement('canvas');
-                let width = img.width;
-                let height = img.height;
-
-                // Пропорциональное уменьшение, если ширина больше maxWidth
-                if (width > maxWidth) {
-                    height = (maxWidth / width) * height;
-                    width = maxWidth;
-                }
-
-                canvas.width = width;
-                canvas.height = height;
-                const ctx = canvas.getContext('2d');
-                ctx.drawImage(img, 0, 0, width, height);
-
-                // Возвращаем готовую Base64 строку (JPEG)
-                resolve(canvas.toDataURL('image/jpeg', quality));
-            };
-            img.src = e.target.result;
-        };
-        reader.readAsDataURL(file);
-    });
-}
-
 async function saveMarker(tempId) {
     const name = document.getElementById('markerName').value;
     const note = document.getElementById('markerNote').value;
@@ -88,10 +116,8 @@ async function saveMarker(tempId) {
     const data = markers[tempId];
     let imageUrl = null;
 
-    // Если выбран файл, сжимаем его и получаем Base64 строку
     if (fileInput.files && fileInput.files[0]) {
         try {
-            // Сохраняем картинку прямо как текст (Data URL)
             imageUrl = await fileToCompressedDataURL(fileInput.files[0]);
         } catch (err) {
             console.error('Ошибка обработки картинки:', err);
@@ -100,7 +126,6 @@ async function saveMarker(tempId) {
         }
     }
 
-    // Отправляем в базу. imageUrl теперь содержит Base64 строку
     db.ref('markers').push({
         name: name,
         note: note,
@@ -114,6 +139,17 @@ async function saveMarker(tempId) {
 }
 
 function deleteMarker(id) {
+    if (localStorage.getItem('map_auth') !== 'true') {
+        alert('Необходимо войти на сайт');
+        return;
+    }
+
+    const answer = prompt('Введите пароль для удаления метки:');
+    if (answer !== SITE_PASSWORD) {
+        if (answer !== null) alert('Неверный пароль');
+        return;
+    }
+
     if (markers[id]) {
         map.removeLayer(markers[id].marker);
         delete markers[id];
@@ -167,7 +203,6 @@ function setupFirebaseListeners() {
         const m = snapshot.val();
         if (!markers[id]) {
             const marker = L.marker([m.lat, m.lng]).addTo(map);
-            // Отображаем картинку в попапе, если она есть
             const imgTag = m.imageUrl ? `<img src="${m.imageUrl}" style="max-width:200px;max-height:150px;display:block;margin-bottom:5px;border-radius:4px;">` : '';
             marker.bindPopup(`${imgTag}<b>${m.name || 'Без названия'}</b><br>${m.note || ''}`);
             markers[id] = { marker, name: m.name, note: m.note, lat: m.lat, lng: m.lng, imageUrl: m.imageUrl };
@@ -180,6 +215,7 @@ function setupFirebaseListeners() {
         if (markers[id]) {
             markers[id].name = m.name;
             markers[id].note = m.note;
+            markers[id].imageUrl = m.imageUrl;
             const imgTag = m.imageUrl ? `<img src="${m.imageUrl}" style="max-width:200px;max-height:150px;display:block;margin-bottom:5px;border-radius:4px;">` : '';
             markers[id].marker.setPopupContent(`${imgTag}<b>${m.name || 'Без названия'}</b><br>${m.note || ''}`);
         }
@@ -225,6 +261,10 @@ async function exportMarkers() {
 async function importMarkers(event) {
     const file = event.target.files[0];
     if (!file) return;
+    if (localStorage.getItem('map_auth') !== 'true') {
+        alert('Необходимо войти на сайт');
+        return;
+    }
 
     const reader = new FileReader();
     reader.onload = async function(e) {
@@ -247,12 +287,15 @@ async function importMarkers(event) {
     reader.readAsText(file);
 }
 
-// === ЗАЩИЩЕННАЯ ОЧИСТКА ===
 async function clearMarkers() {
-    // Требуем ввода кодового слова для предотвращения случайного клика
-    const answer = prompt('Внимание! Это действие удалит ВСЕ метки безвозвратно.\nДля подтверждения введите слово: УДАЛИТЬ');
-    if (answer !== 'УДАЛИТЬ') {
-        if (answer !== null) alert('Неверное слово. Удаление отменено.');
+    if (localStorage.getItem('map_auth') !== 'true') {
+        alert('Необходимо войти на сайт');
+        return;
+    }
+
+    const answer = prompt('Внимание! Это удалит ВСЕ метки.\nВведите пароль администратора:');
+    if (answer !== SITE_PASSWORD) {
+        if (answer !== null) alert('Неверный пароль');
         return;
     }
     await db.ref('markers').remove();

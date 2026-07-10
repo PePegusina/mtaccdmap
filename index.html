@@ -8,21 +8,37 @@
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-    <div id="map"></div>
-    <div id="controls">
-        <button onclick="exportMarkers()">Экспорт меток</button>
-        <label>Импорт меток<input type="file" id="importFile" accept=".json" onchange="importMarkers(event)"></label>
-        <button onclick="clearMarkers()">Очистить все</button>
-        <hr>
-        <small>Ctrl+Клик — лут собран (5 мин)</small>
+    <!-- Оверлей авторизации -->
+    <div id="authOverlay">
+        <div class="auth-box">
+            <h2>Доступ к карте</h2>
+            <input type="password" id="authPassword" placeholder="Введите пароль" autocomplete="off">
+            <button onclick="checkAuth()">Войти</button>
+            <p id="authError" style="color:red;display:none;">Неверный пароль</p>
+        </div>
     </div>
 
+    <div id="map"></div>
+
+    <div id="controls">
+        <button onclick="logout()">Выйти</button>
+        <hr>
+        <button onclick="exportMarkers()">Экспорт меток</button>
+        <label>
+            Импорт меток
+            <input type="file" id="importFile" accept=".json" onchange="importMarkers(event)">
+        </label>
+        <button onclick="clearMarkers()">Очистить все</button>
+        <hr>
+        <small>Клик — создать метку<br>Ctrl+Клик — лут собран (5 мин)</small>
+    </div>
+
+    <!-- Leaflet JS -->
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
-    <!-- Firebase SDK (Compat версия для простоты) -->
-    <!-- Firebase SDK (Compat версии) -->
-<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
+    <!-- Firebase SDK (Compat) -->
+    <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
 
     <script src="config.js"></script>
     <script src="map.js"></script>
