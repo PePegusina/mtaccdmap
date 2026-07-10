@@ -24,31 +24,6 @@ const PING_DURATION = 300000; // 5 минут
 setupFirebaseListeners();
 
 // === ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ===
-// Сжатие изображения перед загрузкой, чтобы экономить место в Storage
-function compressImage(file, maxWidth = 800, quality = 0.7) {
-    return new Promise((resolve) => {
-        const reader = new FileReader();
-        reader.onload = (e) => {
-            const img = new Image();
-            img.onload = () => {
-                const canvas = document.createElement('canvas');
-                let width = img.width;
-                let height = img.height;
-                if (width > maxWidth) {
-                    height = (maxWidth / width) * height;
-                    width = maxWidth;
-                }
-                canvas.width = width;
-                canvas.height = height;
-                const ctx = canvas.getContext('2d');
-                ctx.drawImage(img, 0, 0, width, height);
-                canvas.toBlob(resolve, 'image/jpeg', quality);
-            };
-            img.src = e.target.result;
-        };
-        reader.readAsDataURL(file);
-    });
-}
 
 // === МЕТКИ ===
 map.on('click', async function(e) {
@@ -74,6 +49,37 @@ map.on('click', async function(e) {
 
 map.getContainer().addEventListener('contextmenu', e => e.preventDefault());
 
+// Функция конвертации файла в сжатый Base64 (Data URL)
+function fileToCompressedDataURL(file, maxWidth = 800, quality = 0.7) {
+    return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const img = new Image();
+            img.onload = () => {
+                const canvas = document.createElement('canvas');
+                let width = img.width;
+                let height = img.height;
+
+                // Пропорциональное уменьшение, если ширина больше maxWidth
+                if (width > maxWidth) {
+                    height = (maxWidth / width) * height;
+                    width = maxWidth;
+                }
+
+                canvas.width = width;
+                canvas.height = height;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0, width, height);
+
+                // Возвращаем готовую Base64 строку (JPEG)
+                resolve(canvas.toDataURL('image/jpeg', quality));
+            };
+            img.src = e.target.result;
+        };
+        reader.readAsDataURL(file);
+    });
+}
+
 async function saveMarker(tempId) {
     const name = document.getElementById('markerName').value;
     const note = document.getElementById('markerNote').value;
@@ -82,20 +88,19 @@ async function saveMarker(tempId) {
     const data = markers[tempId];
     let imageUrl = null;
 
-    // Если выбран файл, сжимаем и загружаем в Firebase Storage
+    // Если выбран файл, сжимаем его и получаем Base64 строку
     if (fileInput.files && fileInput.files[0]) {
         try {
-            const compressedBlob = await compressImage(fileInput.files[0]);
-            const imageRef = firebase.storage().ref().child(`markers/${tempId}_${Date.now()}.jpg`);
-            await imageRef.put(compressedBlob);
-            imageUrl = await imageRef.getDownloadURL();
+            // Сохраняем картинку прямо как текст (Data URL)
+            imageUrl = await fileToCompressedDataURL(fileInput.files[0]);
         } catch (err) {
-            console.error('Ошибка загрузки картинки:', err);
-            alert('Не удалось загрузить изображение');
+            console.error('Ошибка обработки картинки:', err);
+            alert('Не удалось обработать изображение');
             return;
         }
     }
 
+    // Отправляем в базу. imageUrl теперь содержит Base64 строку
     db.ref('markers').push({
         name: name,
         note: note,
