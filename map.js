@@ -19,19 +19,17 @@ function logout() {
     document.getElementById('authPassword').value = '';
 }
 
-// Проверка при загрузке
 if (localStorage.getItem('map_auth') === 'true') {
     document.getElementById('authOverlay').classList.add('hidden');
 }
 
-// Enter в поле пароля
 document.getElementById('authPassword').addEventListener('keypress', (e) => {
     if (e.key === 'Enter') checkAuth();
 });
 
 // === КОНФИГУРАЦИЯ КАРТЫ ===
 const MAP_WIDTH = 6200;
-const MAP_HEIGHT = 4650;
+const MAP_HEIGHT = 6200;
 
 const map = L.map('map', {
     crs: L.CRS.Simple,
@@ -49,10 +47,10 @@ map.setView([MAP_HEIGHT / 2, MAP_WIDTH / 2], 0);
 // === ХРАНЕНИЕ ДАННЫХ ===
 let markers = {};
 let pings = {};
-const PING_DURATION = 300000; // 5 минут
+const PING_DURATION = 300000;
 
-// === ИНИЦИАЛИЗАЦИЯ ===
 setupFirebaseListeners();
+updateMarkerList();
 
 // === СЖАТИЕ КАРТИНОК ===
 function fileToCompressedDataURL(file, maxWidth = 800, quality = 0.7) {
@@ -100,10 +98,11 @@ map.on('click', async function(e) {
         <textarea id="markerNote" placeholder="Заметка" style="width:200px;height:60px;"></textarea><br>
         <input type="file" id="markerImage" accept="image/*" style="width:200px;margin:5px 0;"><br>
         <button onclick="saveMarker('${tempId}')">Сохранить</button>
-        <button onclick="deleteMarker('${tempId}')">Удалить</button>
+        <button onclick="deleteMarker('${tempId}')">Отмена</button>
     `);
 
     markers[tempId] = { marker, name: '', note: '', lat: e.latlng.lat, lng: e.latlng.lng };
+    updateMarkerList();
 });
 
 map.getContainer().addEventListener('contextmenu', e => e.preventDefault());
@@ -114,6 +113,8 @@ async function saveMarker(tempId) {
     const fileInput = document.getElementById('markerImage');
 
     const data = markers[tempId];
+    if (!data) return;
+
     let imageUrl = null;
 
     if (fileInput.files && fileInput.files[0]) {
@@ -136,9 +137,21 @@ async function saveMarker(tempId) {
 
     map.removeLayer(data.marker);
     delete markers[tempId];
+    updateMarkerList();
 }
 
 function deleteMarker(id) {
+    // Временные метки (еще не сохраненные в БД) удаляются без пароля
+    if (typeof id === 'string' && id.startsWith('temp_')) {
+        if (markers[id]) {
+            map.removeLayer(markers[id].marker);
+            delete markers[id];
+        }
+        updateMarkerList();
+        return;
+    }
+
+    // Сохраненные метки требуют авторизации и пароля
     if (localStorage.getItem('map_auth') !== 'true') {
         alert('Необходимо войти на сайт');
         return;
@@ -155,6 +168,39 @@ function deleteMarker(id) {
         delete markers[id];
     }
     db.ref('markers/' + id).remove();
+}
+
+// === ПЕРЕХОД К МЕТКЕ ПО КЛИКУ В СПИСКЕ ===
+function flyToMarker(id) {
+    if (markers[id]) {
+        map.setView([markers[id].lat, markers[id].lng], 1);
+        markers[id].marker.openPopup();
+    }
+}
+
+// === ОБНОВЛЕНИЕ СПИСКА МЕТОК ===
+function updateMarkerList() {
+    const list = document.getElementById('markerList');
+    if (!list) return;
+
+    list.innerHTML = '';
+
+    const entries = Object.entries(markers).filter(([id]) => !id.startsWith('temp_'));
+
+    if (entries.length === 0) {
+        list.innerHTML = '<div class="list-empty">Нет сохранённых меток</div>';
+        return;
+    }
+
+    entries.forEach(([id, data]) => {
+        const item = document.createElement('div');
+        item.className = 'marker-item';
+        item.innerHTML = `
+            <span class="marker-name" onclick="flyToMarker('${id}')">${data.name || 'Без названия'}</span>
+            <button class="marker-delete" onclick="deleteMarker('${id}')">×</button>
+        `;
+        list.appendChild(item);
+    });
 }
 
 // === ПИНГИ ===
@@ -206,6 +252,7 @@ function setupFirebaseListeners() {
             const imgTag = m.imageUrl ? `<img src="${m.imageUrl}" style="max-width:200px;max-height:150px;display:block;margin-bottom:5px;border-radius:4px;">` : '';
             marker.bindPopup(`${imgTag}<b>${m.name || 'Без названия'}</b><br>${m.note || ''}`);
             markers[id] = { marker, name: m.name, note: m.note, lat: m.lat, lng: m.lng, imageUrl: m.imageUrl };
+            updateMarkerList();
         }
     });
 
@@ -218,6 +265,7 @@ function setupFirebaseListeners() {
             markers[id].imageUrl = m.imageUrl;
             const imgTag = m.imageUrl ? `<img src="${m.imageUrl}" style="max-width:200px;max-height:150px;display:block;margin-bottom:5px;border-radius:4px;">` : '';
             markers[id].marker.setPopupContent(`${imgTag}<b>${m.name || 'Без названия'}</b><br>${m.note || ''}`);
+            updateMarkerList();
         }
     });
 
@@ -226,6 +274,7 @@ function setupFirebaseListeners() {
         if (markers[id]) {
             map.removeLayer(markers[id].marker);
             delete markers[id];
+            updateMarkerList();
         }
     });
 

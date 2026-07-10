@@ -20,17 +20,25 @@
 
     <div id="map"></div>
 
-    <div id="controls">
-        <button onclick="logout()">Выйти</button>
-        <hr>
-        <button onclick="exportMarkers()">Экспорт меток</button>
-        <label>
-            Импорт меток
-            <input type="file" id="importFile" accept=".json" onchange="importMarkers(event)">
-        </label>
-        <button onclick="clearMarkers()">Очистить все</button>
-        <hr>
-        <small>Клик — создать метку<br>Ctrl+Клик — лут собран (5 мин)</small>
+    <div id="sidebar">
+        <div id="controls">
+            <button onclick="logout()">Выйти</button>
+            <hr>
+            <button onclick="exportMarkers()">Экспорт меток</button>
+            <label>
+                Импорт меток
+                <input type="file" id="importFile" accept=".json" onchange="importMarkers(event)">
+            </label>
+            <button onclick="clearMarkers()">Очистить все</button>
+            <hr>
+            <small>Клик — создать метку<br>Ctrl+Клик — лут собран (5 мин)</small>
+        </div>
+
+        <!-- Список сохраненных меток -->
+        <div id="markerListContainer">
+            <h3>Метки на карте</h3>
+            <div id="markerList"></div>
+        </div>
     </div>
 
     <!-- Leaflet JS -->

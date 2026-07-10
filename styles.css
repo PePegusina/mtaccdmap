@@ -10,16 +10,23 @@ body, html {
     width: 100%;
 }
 
-#controls {
+#sidebar {
     position: absolute;
     top: 10px;
     right: 10px;
     z-index: 1000;
+    width: 240px;
+    max-height: calc(100vh - 20px);
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+#controls {
     background: white;
     padding: 10px;
     border-radius: 5px;
     box-shadow: 0 2px 5px rgba(0,0,0,0.3);
-    max-width: 220px;
 }
 
 #controls button {
@@ -48,6 +55,81 @@ body, html {
     color: #666;
     font-size: 11px;
     line-height: 1.4;
+}
+
+/* Список меток */
+#markerListContainer {
+    background: white;
+    border-radius: 5px;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+    flex: 1;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    min-height: 200px;
+}
+
+#markerListContainer h3 {
+    margin: 0;
+    padding: 10px;
+    font-size: 14px;
+    border-bottom: 1px solid #eee;
+    background: #f8f8f8;
+}
+
+#markerList {
+    overflow-y: auto;
+    flex: 1;
+    padding: 5px;
+}
+
+.marker-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 8px;
+    margin: 2px 0;
+    border-radius: 4px;
+    background: #f5f5f5;
+    font-size: 13px;
+}
+
+.marker-item:hover {
+    background: #e8f0ff;
+}
+
+.marker-name {
+    flex: 1;
+    cursor: pointer;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    margin-right: 8px;
+}
+
+.marker-delete {
+    background: #ef4444;
+    color: white;
+    border: none;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    cursor: pointer;
+    font-size: 14px;
+    line-height: 1;
+    padding: 0;
+    flex-shrink: 0;
+}
+
+.marker-delete:hover {
+    background: #dc2626;
+}
+
+.list-empty {
+    padding: 10px;
+    text-align: center;
+    color: #999;
+    font-size: 12px;
 }
 
 /* Оверлей авторизации */
