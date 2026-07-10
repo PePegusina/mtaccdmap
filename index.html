@@ -18,6 +18,21 @@
         </div>
     </div>
 
+    <!-- Модальное окно редактирования метки -->
+    <div id="editModal" class="modal hidden">
+        <div class="modal-content">
+            <h3>Редактировать метку</h3>
+            <input type="text" id="editName" placeholder="Название">
+            <textarea id="editNote" placeholder="Заметка"></textarea>
+            <input type="file" id="editImage" accept="image/*">
+            <small style="color:#666; display:block; margin:5px 0;">Оставьте пустым, чтобы сохранить текущее изображение</small>
+            <div class="modal-buttons">
+                <button onclick="saveEditMarker()">Сохранить</button>
+                <button onclick="closeEditModal()">Отмена</button>
+            </div>
+        </div>
+    </div>
+
     <div id="map"></div>
 
     <div id="sidebar">
@@ -34,17 +49,13 @@
             <small>Клик — создать метку<br>Ctrl+Клик — лут собран (5 мин)</small>
         </div>
 
-        <!-- Список сохраненных меток -->
         <div id="markerListContainer">
             <h3>Метки на карте</h3>
             <div id="markerList"></div>
         </div>
     </div>
 
-    <!-- Leaflet JS -->
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-
-    <!-- Firebase SDK (Compat) -->
     <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
 

@@ -2,7 +2,6 @@
 function checkAuth() {
     const input = document.getElementById('authPassword');
     const error = document.getElementById('authError');
-
     if (input.value === SITE_PASSWORD) {
         localStorage.setItem('map_auth', 'true');
         document.getElementById('authOverlay').classList.add('hidden');
@@ -41,12 +40,14 @@ const map = L.map('map', {
 });
 
 const bounds = [[0, 0], [MAP_HEIGHT, MAP_WIDTH]];
+// Если карта в PNG, замени 'map.webp' на 'map.png'
 L.imageOverlay('map.webp', bounds).addTo(map);
 map.setView([MAP_HEIGHT / 2, MAP_WIDTH / 2], 0);
 
 // === ХРАНЕНИЕ ДАННЫХ ===
 let markers = {};
 let pings = {};
+let currentEditId = null;
 const PING_DURATION = 300000;
 
 setupFirebaseListeners();
@@ -84,7 +85,6 @@ map.on('click', async function(e) {
         alert('Войдите на сайт, чтобы взаимодействовать с картой');
         return;
     }
-
     if (e.originalEvent.ctrlKey || e.originalEvent.button === 2) {
         addPing(e.latlng);
         return;
@@ -111,37 +111,26 @@ async function saveMarker(tempId) {
     const name = document.getElementById('markerName').value;
     const note = document.getElementById('markerNote').value;
     const fileInput = document.getElementById('markerImage');
-
     const data = markers[tempId];
     if (!data) return;
 
     let imageUrl = null;
-
     if (fileInput.files && fileInput.files[0]) {
         try {
             imageUrl = await fileToCompressedDataURL(fileInput.files[0]);
         } catch (err) {
-            console.error('Ошибка обработки картинки:', err);
             alert('Не удалось обработать изображение');
             return;
         }
     }
 
-    db.ref('markers').push({
-        name: name,
-        note: note,
-        lat: data.lat,
-        lng: data.lng,
-        imageUrl: imageUrl
-    });
-
+    db.ref('markers').push({ name, note, lat: data.lat, lng: data.lng, imageUrl });
     map.removeLayer(data.marker);
     delete markers[tempId];
     updateMarkerList();
 }
 
 function deleteMarker(id) {
-    // Временные метки (еще не сохраненные в БД) удаляются без пароля
     if (typeof id === 'string' && id.startsWith('temp_')) {
         if (markers[id]) {
             map.removeLayer(markers[id].marker);
@@ -150,19 +139,15 @@ function deleteMarker(id) {
         updateMarkerList();
         return;
     }
-
-    // Сохраненные метки требуют авторизации и пароля
     if (localStorage.getItem('map_auth') !== 'true') {
         alert('Необходимо войти на сайт');
         return;
     }
-
     const answer = prompt('Введите пароль для удаления метки:');
     if (answer !== SITE_PASSWORD) {
         if (answer !== null) alert('Неверный пароль');
         return;
     }
-
     if (markers[id]) {
         map.removeLayer(markers[id].marker);
         delete markers[id];
@@ -170,7 +155,46 @@ function deleteMarker(id) {
     db.ref('markers/' + id).remove();
 }
 
-// === ПЕРЕХОД К МЕТКЕ ПО КЛИКУ В СПИСКЕ ===
+// === РЕДАКТИРОВАНИЕ ===
+function editMarker(id) {
+    if (localStorage.getItem('map_auth') !== 'true') {
+        alert('Необходимо войти на сайт');
+        return;
+    }
+    const m = markers[id];
+    if (!m) return;
+    currentEditId = id;
+    document.getElementById('editName').value = m.name || '';
+    document.getElementById('editNote').value = m.note || '';
+    document.getElementById('editImage').value = '';
+    document.getElementById('editModal').classList.remove('hidden');
+}
+
+async function saveEditMarker() {
+    if (!currentEditId) return;
+    const name = document.getElementById('editName').value;
+    const note = document.getElementById('editNote').value;
+    const fileInput = document.getElementById('editImage');
+    const updateData = { name, note };
+
+    if (fileInput.files && fileInput.files[0]) {
+        try {
+            updateData.imageUrl = await fileToCompressedDataURL(fileInput.files[0]);
+        } catch (err) {
+            alert('Ошибка обработки изображения');
+            return;
+        }
+    }
+
+    await db.ref('markers/' + currentEditId).update(updateData);
+    closeEditModal();
+}
+
+function closeEditModal() {
+    document.getElementById('editModal').classList.add('hidden');
+    currentEditId = null;
+}
+
 function flyToMarker(id) {
     if (markers[id]) {
         map.setView([markers[id].lat, markers[id].lng], 1);
@@ -178,13 +202,11 @@ function flyToMarker(id) {
     }
 }
 
-// === ОБНОВЛЕНИЕ СПИСКА МЕТОК ===
+// === СПИСОК МЕТОК ===
 function updateMarkerList() {
     const list = document.getElementById('markerList');
     if (!list) return;
-
     list.innerHTML = '';
-
     const entries = Object.entries(markers).filter(([id]) => !id.startsWith('temp_'));
 
     if (entries.length === 0) {
@@ -197,7 +219,8 @@ function updateMarkerList() {
         item.className = 'marker-item';
         item.innerHTML = `
             <span class="marker-name" onclick="flyToMarker('${id}')">${data.name || 'Без названия'}</span>
-            <button class="marker-delete" onclick="deleteMarker('${id}')">×</button>
+            <button class="marker-edit" onclick="editMarker('${id}')" title="Редактировать">✎</button>
+            <button class="marker-delete" onclick="deleteMarker('${id}')" title="Удалить">×</button>
         `;
         list.appendChild(item);
     });
@@ -205,32 +228,20 @@ function updateMarkerList() {
 
 // === ПИНГИ ===
 function addPing(latlng) {
-    db.ref('pings').push({
-        lat: latlng.lat,
-        lng: latlng.lng,
-        timestamp: Date.now()
-    });
+    db.ref('pings').push({ lat: latlng.lat, lng: latlng.lng, timestamp: Date.now() });
 }
 
 function renderPing(id, data) {
     if (pings[id]) return;
-
     const age = Date.now() - data.timestamp;
     if (age > PING_DURATION) {
         db.ref('pings/' + id).remove();
         return;
     }
-
     const circle = L.circleMarker([data.lat, data.lng], {
-        radius: 14,
-        fillColor: '#9ca3af',
-        color: '#fff',
-        weight: 2,
-        fillOpacity: 0.9
+        radius: 14, fillColor: '#9ca3af', color: '#fff', weight: 2, fillOpacity: 0.9
     }).addTo(map);
-
     circle.bindTooltip('Лут собран', { permanent: false, direction: 'top' });
-
     const timeoutId = setTimeout(() => {
         if (pings[id]) {
             map.removeLayer(pings[id]._layer);
@@ -238,7 +249,6 @@ function renderPing(id, data) {
         }
         db.ref('pings/' + id).remove();
     }, PING_DURATION - age);
-
     pings[id] = { _layer: circle, timeoutId };
 }
 
@@ -265,7 +275,7 @@ function setupFirebaseListeners() {
             markers[id].imageUrl = m.imageUrl;
             const imgTag = m.imageUrl ? `<img src="${m.imageUrl}" style="max-width:200px;max-height:150px;display:block;margin-bottom:5px;border-radius:4px;">` : '';
             markers[id].marker.setPopupContent(`${imgTag}<b>${m.name || 'Без названия'}</b><br>${m.note || ''}`);
-            updateMarkerList();
+            updateMarkerList(); // Обновляем список при изменении названия
         }
     });
 
@@ -278,10 +288,7 @@ function setupFirebaseListeners() {
         }
     });
 
-    db.ref('pings').on('child_added', (snapshot) => {
-        renderPing(snapshot.key, snapshot.val());
-    });
-
+    db.ref('pings').on('child_added', (snapshot) => renderPing(snapshot.key, snapshot.val()));
     db.ref('pings').on('child_removed', (snapshot) => {
         const id = snapshot.key;
         if (pings[id]) {
@@ -297,39 +304,25 @@ async function exportMarkers() {
     const snapshot = await db.ref('markers').once('value');
     const data = snapshot.val() || {};
     const arr = Object.entries(data).map(([id, m]) => ({ id, ...m }));
-
     const blob = new Blob([JSON.stringify(arr, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url;
-    a.download = 'markers.json';
-    a.click();
+    a.href = url; a.download = 'markers.json'; a.click();
     URL.revokeObjectURL(url);
 }
 
 async function importMarkers(event) {
     const file = event.target.files[0];
     if (!file) return;
-    if (localStorage.getItem('map_auth') !== 'true') {
-        alert('Необходимо войти на сайт');
-        return;
-    }
-
+    if (localStorage.getItem('map_auth') !== 'true') { alert('Необходимо войти на сайт'); return; }
     const reader = new FileReader();
     reader.onload = async function(e) {
         const data = JSON.parse(e.target.result);
         await db.ref('markers').remove();
-
         const updates = {};
         data.forEach(m => {
             const newRef = db.ref('markers').push();
-            updates['/markers/' + newRef.key] = {
-                name: m.name,
-                note: m.note,
-                lat: m.lat,
-                lng: m.lng,
-                imageUrl: m.imageUrl || null
-            };
+            updates['/markers/' + newRef.key] = { name: m.name, note: m.note, lat: m.lat, lng: m.lng, imageUrl: m.imageUrl || null };
         });
         await db.ref().update(updates);
     };
@@ -337,15 +330,8 @@ async function importMarkers(event) {
 }
 
 async function clearMarkers() {
-    if (localStorage.getItem('map_auth') !== 'true') {
-        alert('Необходимо войти на сайт');
-        return;
-    }
-
+    if (localStorage.getItem('map_auth') !== 'true') { alert('Необходимо войти на сайт'); return; }
     const answer = prompt('Внимание! Это удалит ВСЕ метки.\nВведите пароль администратора:');
-    if (answer !== SITE_PASSWORD) {
-        if (answer !== null) alert('Неверный пароль');
-        return;
-    }
+    if (answer !== SITE_PASSWORD) { if (answer !== null) alert('Неверный пароль'); return; }
     await db.ref('markers').remove();
 }
