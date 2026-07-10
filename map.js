@@ -1,3 +1,25 @@
+// === ТЕМА ===
+function initTheme() {
+    const saved = localStorage.getItem('theme');
+    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    const theme = saved || (prefersDark ? 'dark' : 'light');
+    applyTheme(theme);
+}
+
+function applyTheme(theme) {
+    document.documentElement.setAttribute('data-theme', theme);
+    localStorage.setItem('theme', theme);
+    const btn = document.getElementById('themeBtn');
+    if (btn) btn.textContent = theme === 'dark' ? 'Темная' : 'Светлая';
+}
+
+function toggleTheme() {
+    const current = document.documentElement.getAttribute('data-theme');
+    applyTheme(current === 'dark' ? 'light' : 'dark');
+}
+
+initTheme();
+
 // === АВТОРИЗАЦИЯ ===
 function checkAuth() {
     const input = document.getElementById('authPassword');
@@ -40,7 +62,6 @@ const map = L.map('map', {
 });
 
 const bounds = [[0, 0], [MAP_HEIGHT, MAP_WIDTH]];
-// Если карта в PNG, замени 'map.webp' на 'map.png'
 L.imageOverlay('map.webp', bounds).addTo(map);
 map.setView([MAP_HEIGHT / 2, MAP_WIDTH / 2], 0);
 
@@ -54,7 +75,7 @@ setupFirebaseListeners();
 updateMarkerList();
 
 // === СЖАТИЕ КАРТИНОК ===
-function fileToCompressedDataURL(file, maxWidth = 800, quality = 0.7) {
+function fileToCompressedDataURL(file, maxWidth = 600, quality = 0.6) {
     return new Promise((resolve) => {
         const reader = new FileReader();
         reader.onload = (e) => {
@@ -128,6 +149,7 @@ async function saveMarker(tempId) {
     map.removeLayer(data.marker);
     delete markers[tempId];
     updateMarkerList();
+    saveCache();
 }
 
 function deleteMarker(id) {
@@ -137,6 +159,7 @@ function deleteMarker(id) {
             delete markers[id];
         }
         updateMarkerList();
+        saveCache();
         return;
     }
     if (localStorage.getItem('map_auth') !== 'true') {
@@ -226,6 +249,17 @@ function updateMarkerList() {
     });
 }
 
+// === КЭШИРОВАНИЕ ===
+function saveCache() {
+    const cache = {};
+    Object.entries(markers).forEach(([id, m]) => {
+        if (!id.startsWith('temp_')) {
+            cache[id] = { name: m.name, note: m.note, lat: m.lat, lng: m.lng, imageUrl: m.imageUrl };
+        }
+    });
+    localStorage.setItem('markers_cache', JSON.stringify(cache));
+}
+
 // === ПИНГИ ===
 function addPing(latlng) {
     db.ref('pings').push({ lat: latlng.lat, lng: latlng.lng, timestamp: Date.now() });
@@ -254,15 +288,30 @@ function renderPing(id, data) {
 
 // === FIREBASE LISTENERS ===
 function setupFirebaseListeners() {
+    const cachedMarkers = localStorage.getItem('markers_cache');
+    if (cachedMarkers) {
+        const cached = JSON.parse(cachedMarkers);
+        Object.entries(cached).forEach(([id, m]) => {
+            if (!markers[id]) {
+                const marker = L.marker([m.lat, m.lng]).addTo(map);
+                const imgTag = m.imageUrl ? `<img src="${m.imageUrl}" style="max-width:200px;max-height:150px;display:block;margin-bottom:5px;border-radius:4px;" loading="lazy">` : '';
+                marker.bindPopup(`${imgTag}<b>${m.name || 'Без названия'}</b><br>${m.note || ''}`);
+                markers[id] = { marker, name: m.name, note: m.note, lat: m.lat, lng: m.lng, imageUrl: m.imageUrl };
+            }
+        });
+        updateMarkerList();
+    }
+
     db.ref('markers').on('child_added', (snapshot) => {
         const id = snapshot.key;
         const m = snapshot.val();
         if (!markers[id]) {
             const marker = L.marker([m.lat, m.lng]).addTo(map);
-            const imgTag = m.imageUrl ? `<img src="${m.imageUrl}" style="max-width:200px;max-height:150px;display:block;margin-bottom:5px;border-radius:4px;">` : '';
+            const imgTag = m.imageUrl ? `<img src="${m.imageUrl}" style="max-width:200px;max-height:150px;display:block;margin-bottom:5px;border-radius:4px;" loading="lazy">` : '';
             marker.bindPopup(`${imgTag}<b>${m.name || 'Без названия'}</b><br>${m.note || ''}`);
             markers[id] = { marker, name: m.name, note: m.note, lat: m.lat, lng: m.lng, imageUrl: m.imageUrl };
             updateMarkerList();
+            saveCache();
         }
     });
 
@@ -273,9 +322,10 @@ function setupFirebaseListeners() {
             markers[id].name = m.name;
             markers[id].note = m.note;
             markers[id].imageUrl = m.imageUrl;
-            const imgTag = m.imageUrl ? `<img src="${m.imageUrl}" style="max-width:200px;max-height:150px;display:block;margin-bottom:5px;border-radius:4px;">` : '';
+            const imgTag = m.imageUrl ? `<img src="${m.imageUrl}" style="max-width:200px;max-height:150px;display:block;margin-bottom:5px;border-radius:4px;" loading="lazy">` : '';
             markers[id].marker.setPopupContent(`${imgTag}<b>${m.name || 'Без названия'}</b><br>${m.note || ''}`);
-            updateMarkerList(); // Обновляем список при изменении названия
+            updateMarkerList();
+            saveCache();
         }
     });
 
@@ -285,6 +335,7 @@ function setupFirebaseListeners() {
             map.removeLayer(markers[id].marker);
             delete markers[id];
             updateMarkerList();
+            saveCache();
         }
     });
 
@@ -307,22 +358,34 @@ async function exportMarkers() {
     const blob = new Blob([JSON.stringify(arr, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url; a.download = 'markers.json'; a.click();
+    a.href = url;
+    a.download = 'markers.json';
+    a.click();
     URL.revokeObjectURL(url);
 }
 
 async function importMarkers(event) {
     const file = event.target.files[0];
     if (!file) return;
-    if (localStorage.getItem('map_auth') !== 'true') { alert('Необходимо войти на сайт'); return; }
+    if (localStorage.getItem('map_auth') !== 'true') {
+        alert('Необходимо войти на сайт');
+        return;
+    }
     const reader = new FileReader();
     reader.onload = async function(e) {
         const data = JSON.parse(e.target.result);
         await db.ref('markers').remove();
+        localStorage.removeItem('markers_cache');
         const updates = {};
         data.forEach(m => {
             const newRef = db.ref('markers').push();
-            updates['/markers/' + newRef.key] = { name: m.name, note: m.note, lat: m.lat, lng: m.lng, imageUrl: m.imageUrl || null };
+            updates['/markers/' + newRef.key] = {
+                name: m.name,
+                note: m.note,
+                lat: m.lat,
+                lng: m.lng,
+                imageUrl: m.imageUrl || null
+            };
         });
         await db.ref().update(updates);
     };
@@ -330,8 +393,14 @@ async function importMarkers(event) {
 }
 
 async function clearMarkers() {
-    if (localStorage.getItem('map_auth') !== 'true') { alert('Необходимо войти на сайт'); return; }
+    if (localStorage.getItem('map_auth') !== 'true') {
+        alert('Необходимо войти на сайт');
+        return;
+    }
     const answer = prompt('Внимание! Это удалит ВСЕ метки.\nВведите пароль администратора:');
-    if (answer !== SITE_PASSWORD) { if (answer !== null) alert('Неверный пароль'); return; }
+    if (answer !== SITE_PASSWORD) {
+        if (answer !== null) alert('Неверный пароль');
+        return;
+    }
     await db.ref('markers').remove();
 }
