@@ -12,36 +12,26 @@ const map = L.map('map', {
 });
 
 const bounds = [[0, 0], [MAP_HEIGHT, MAP_WIDTH]];
-
-// Загружаем изображение карты. Если у тебя PNG, замени 'map.webp' на 'map.png'
 L.imageOverlay('map.webp', bounds).addTo(map);
-
 map.setView([MAP_HEIGHT / 2, MAP_WIDTH / 2], 0);
 
 // === ХРАНЕНИЕ ДАННЫХ ===
-let markers = []; // {id, marker, name, note, lat, lng}
-let pings = [];   // {id, lat, lng, _layer, timeoutId}
-
-const PING_DURATION = 300000; // 5 минут в миллисекундах
+let markers = {}; // Объект {id: {marker, name, note, lat, lng}}
+let pings = {};   // Объект {id: {_layer, timeoutId}}
+const PING_DURATION = 300000; // 5 минут
 
 // === ИНИЦИАЛИЗАЦИЯ ===
-async function init() {
-    await loadMarkers();
-    await loadPings();
-    setupRealtimeSubscriptions();
-}
-
-init();
+setupFirebaseListeners();
 
 // === МЕТКИ ===
 map.on('click', async function(e) {
     if (e.originalEvent.ctrlKey || e.originalEvent.button === 2) {
-        await addPing(e.latlng);
+        addPing(e.latlng);
         return;
     }
 
     const marker = L.marker(e.latlng).addTo(map);
-    const tempId = Date.now();
+    const tempId = 'temp_' + Date.now();
 
     marker.bindPopup(`
         <input type="text" id="markerName" placeholder="Название" style="width:200px;"><br>
@@ -50,78 +40,59 @@ map.on('click', async function(e) {
         <button onclick="deleteMarker('${tempId}')">Удалить</button>
     `);
 
-    markers.push({ id: tempId, marker, name: '', note: '', lat: e.latlng.lat, lng: e.latlng.lng });
+    markers[tempId] = { marker, name: '', note: '', lat: e.latlng.lat, lng: e.latlng.lng };
 });
 
 map.getContainer().addEventListener('contextmenu', e => e.preventDefault());
 
-async function saveMarker(tempId) {
-    const idx = markers.findIndex(m => m.id == tempId);
-    if (idx === -1) return;
-
+function saveMarker(tempId) {
     const name = document.getElementById('markerName').value;
     const note = document.getElementById('markerNote').value;
 
-    // Сохраняем в Supabase
-    const { data, error } = await sb
-        .from('markers')
-        .insert([{
-            name: name,
-            note: note,
-            lat: markers[idx].lat,
-            lng: markers[idx].lng
-        }])
-        .select()
-        .single();
+    const data = markers[tempId];
 
-    if (error) {
-        console.error('Error saving marker:', error);
-        alert('Ошибка сохранения метки');
-        return;
-    }
+    // Отправляем в Firebase. push() сам создаст уникальный ID
+    db.ref('markers').push({
+        name: name,
+        note: note,
+        lat: data.lat,
+        lng: data.lng
+    });
 
-    // Обновляем локальный массив с реальным ID из базы
-    markers[idx].id = data.id;
-    markers[idx].name = name;
-    markers[idx].note = note;
-    markers[idx].marker.setPopupContent(`<b>${name}</b><br>${note}`);
+    // Временную метку удаляем с карты, она появится из базы через listener
+    map.removeLayer(data.marker);
+    delete markers[tempId];
 }
 
-async function deleteMarker(id) {
-    const idx = markers.findIndex(m => m.id == id);
-    if (idx === -1) return;
-
-    // Удаляем из Supabase (только если это реальный UUID)
-    if (typeof id === 'string' && id.length === 36) {
-        await sb.from('markers').delete().eq('id', id);
+function deleteMarker(id) {
+    if (markers[id]) {
+        map.removeLayer(markers[id].marker);
+        delete markers[id];
     }
-
-    map.removeLayer(markers[idx].marker);
-    markers.splice(idx, 1);
+    db.ref('markers/' + id).remove();
 }
 
 // === ПИНГИ ===
-async function addPing(latlng) {
-    const { data, error } = await sb
-        .from('pings')
-        .insert([{ lat: latlng.lat, lng: latlng.lng }])
-        .select()
-        .single();
-
-    if (error) {
-        console.error('Error adding ping:', error);
-        return;
-    }
-    // Пинг отрендерится через Realtime подписку
+function addPing(latlng) {
+    db.ref('pings').push({
+        lat: latlng.lat,
+        lng: latlng.lng,
+        timestamp: Date.now()
+    });
 }
 
-function renderPing(pingData) {
-    // Проверяем, не добавлен ли уже этот пинг
-    if (pings.some(p => p.id === pingData.id)) return;
+function renderPing(id, data) {
+    if (pings[id]) return; // Уже отрисован
 
-    const circle = L.circleMarker([pingData.lat, pingData.lng], {
+    const age = Date.now() - data.timestamp;
+    if (age > PING_DURATION) {
+        db.ref('pings/' + id).remove(); // Удаляем протухший
+        return;
+    }
+
+    const circle = L.circleMarker([data.lat, data.lng], {
         radius: 14,
-        fillColor: '#9ca3af', // Серый цвет
+        fillColor: '#9ca3af',
         color: '#fff',
         weight: 2,
         fillOpacity: 0.9
@@ -129,154 +100,72 @@ function renderPing(pingData) {
 
     circle.bindTooltip('Лут собран', { permanent: false, direction: 'top' });
 
-    const timeoutId = setTimeout(() => removePing(pingData.id), PING_DURATION);
-
-    pings.push({
-        id: pingData.id,
-        lat: pingData.lat,
-        lng: pingData.lng,
-        _layer: circle,
-        timeoutId: timeoutId
-    });
-}
-
-async function removePing(id) {
-    const idx = pings.findIndex(p => p.id === id);
-    if (idx === -1) return;
-
-    if (pings[idx]._layer) map.removeLayer(pings[idx]._layer);
-    if (pings[idx].timeoutId) clearTimeout(pings[idx].timeoutId);
-
-    pings.splice(idx, 1);
-
-    // Удаляем из базы
-    await sb.from('pings').delete().eq('id', id);
-}
-
-// === ЗАГРУЗКА ИЗ SUPABASE ===
-async function loadMarkers() {
-    const { data, error } = await sb.from('markers').select('*');
-    if (error) {
-        console.error('Error loading markers:', error);
-        return;
-    }
-
-    data.forEach(m => {
-        const marker = L.marker([m.lat, m.lng]).addTo(map);
-        marker.bindPopup(`<b>${m.name}</b><br>${m.note}`);
-        markers.push({
-            id: m.id,
-            marker: marker,
-            name: m.name,
-            note: m.note,
-            lat: m.lat,
-            lng: m.lng
-        });
-    });
-}
-
-async function loadPings() {
-    const { data, error } = await sb.from('pings').select('*');
-    if (error) {
-        console.error('Error loading pings:', error);
-        return;
-    }
-
-    const now = Date.now();
-    data.forEach(p => {
-        const age = now - new Date(p.created_at).getTime();
-        if (age > PING_DURATION) {
-            // Удаляем старые пинги из базы
-            sb.from('pings').delete().eq('id', p.id);
-            return;
+    const timeoutId = setTimeout(() => {
+        if (pings[id]) {
+            map.removeLayer(pings[id]._layer);
+            delete pings[id];
         }
+        db.ref('pings/' + id).remove();
+    }, PING_DURATION - age);
 
-        const remainingTime = PING_DURATION - age;
-        const circle = L.circleMarker([p.lat, p.lng], {
-            radius: 14,
-            fillColor: '#9ca3af',
-            color: '#fff',
-            weight: 2,
-            fillOpacity: 0.9
-        }).addTo(map);
-
-        circle.bindTooltip('Лут собран', { permanent: false, direction: 'top' });
-
-        const timeoutId = setTimeout(() => removePing(p.id), remainingTime);
-
-        pings.push({
-            id: p.id,
-            lat: p.lat,
-            lng: p.lng,
-            _layer: circle,
-            timeoutId: timeoutId
-        });
-    });
+    pings[id] = { _layer: circle, timeoutId };
 }
 
-// === REALTIME ПОДПИСКИ ===
-function setupRealtimeSubscriptions() {
-    // Подписка на метки
-    sb
-        .channel('markers-channel')
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'markers' }, (payload) => {
-            if (payload.eventType === 'INSERT') {
-                const m = payload.new;
-                if (!markers.some(mark => mark.id === m.id)) {
-                    const marker = L.marker([m.lat, m.lng]).addTo(map);
-                    marker.bindPopup(`<b>${m.name}</b><br>${m.note}`);
-                    markers.push({
-                        id: m.id,
-                        marker: marker,
-                        name: m.name,
-                        note: m.note,
-                        lat: m.lat,
-                        lng: m.lng
-                    });
-                }
-            } else if (payload.eventType === 'DELETE') {
-                const idx = markers.findIndex(mark => mark.id === payload.old.id);
-                if (idx !== -1) {
-                    map.removeLayer(markers[idx].marker);
-                    markers.splice(idx, 1);
-                }
-            } else if (payload.eventType === 'UPDATE') {
-                const idx = markers.findIndex(mark => mark.id === payload.new.id);
-                if (idx !== -1) {
-                    markers[idx].name = payload.new.name;
-                    markers[idx].note = payload.new.note;
-                    markers[idx].marker.setPopupContent(`<b>${payload.new.name}</b><br>${payload.new.note}`);
-                }
-            }
-        })
-        .subscribe();
+// === FIREBASE LISTENERS (Realtime) ===
+function setupFirebaseListeners() {
+    // Слушаем изменения в метках
+    db.ref('markers').on('child_added', (snapshot) => {
+        const id = snapshot.key;
+        const m = snapshot.val();
+        if (!markers[id]) {
+            const marker = L.marker([m.lat, m.lng]).addTo(map);
+            marker.bindPopup(`<b>${m.name}</b><br>${m.note}`);
+            markers[id] = { marker, name: m.name, note: m.note, lat: m.lat, lng: m.lng };
+        }
+    });
 
-    // Подписка на пинги
-    sb
-        .channel('pings-channel')
-        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'pings' }, (payload) => {
-            renderPing(payload.new);
-        })
-        .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'pings' }, (payload) => {
-            const idx = pings.findIndex(p => p.id === payload.old.id);
-            if (idx !== -1) {
-                if (pings[idx]._layer) map.removeLayer(pings[idx]._layer);
-                if (pings[idx].timeoutId) clearTimeout(pings[idx].timeoutId);
-                pings.splice(idx, 1);
-            }
-        })
-        .subscribe();
+    db.ref('markers').on('child_changed', (snapshot) => {
+        const id = snapshot.key;
+        const m = snapshot.val();
+        if (markers[id]) {
+            markers[id].name = m.name;
+            markers[id].note = m.note;
+            markers[id].marker.setPopupContent(`<b>${m.name}</b><br>${m.note}`);
+        }
+    });
+
+    db.ref('markers').on('child_removed', (snapshot) => {
+        const id = snapshot.key;
+        if (markers[id]) {
+            map.removeLayer(markers[id].marker);
+            delete markers[id];
+        }
+    });
+
+    // Слушаем пинги
+    db.ref('pings').on('child_added', (snapshot) => {
+        renderPing(snapshot.key, snapshot.val());
+    });
+
+    db.ref('pings').on('child_removed', (snapshot) => {
+        const id = snapshot.key;
+        if (pings[id]) {
+            map.removeLayer(pings[id]._layer);
+            clearTimeout(pings[id].timeoutId);
+            delete pings[id];
+        }
+    });
 }
 
 // === ЭКСПОРТ / ИМПОРТ ===
 async function exportMarkers() {
-    const { data, error } = await sb.from('markers').select('*');
-    if (error) {
-        console.error('Error exporting markers:', error);
-        return;
-    }
+    const snapshot = await db.ref('markers').once('value');
+    const data = snapshot.val() || {};
 
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    // Преобразуем в массив для экспорта
+    const arr = Object.entries(data).map(([id, m]) => ({ id, ...m }));
+
+    const blob = new Blob([JSON.stringify(arr, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -293,29 +182,26 @@ async function importMarkers(event) {
     reader.onload = async function(e) {
         const data = JSON.parse(e.target.result);
 
-        // Очищаем текущие метки
-        for (const m of markers) {
-            await sb.from('markers').delete().eq('id', m.id);
-            map.removeLayer(m.marker);
-        }
-        markers = [];
+        // Очищаем базу
+        await db.ref('markers').remove();
 
-        // Импортируем новые
-        const { error } = await sb.from('markers').insert(data);
-        if (error) {
-            console.error('Error importing markers:', error);
-            alert('Ошибка импорта');
-        }
+        // Загружаем новые
+        const updates = {};
+        data.forEach(m => {
+            const newRef = db.ref('markers').push();
+            updates['/markers/' + newRef.key] = {
+                name: m.name,
+                note: m.note,
+                lat: m.lat,
+                lng: m.lng
+            };
+        });
+        await db.ref().update(updates);
     };
     reader.readAsText(file);
 }
 
 async function clearMarkers() {
     if (!confirm('Удалить все метки?')) return;
-
-    for (const m of markers) {
-        await sb.from('markers').delete().eq('id', m.id);
-        map.removeLayer(m.marker);
-    }
-    markers = [];
+    await db.ref('markers').remove();
 }
