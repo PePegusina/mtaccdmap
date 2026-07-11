@@ -67,6 +67,7 @@ body, html {
     background: var(--bg-secondary);
 }
 
+/* Анимация скрытия сайдбара */
 #sidebar {
     position: absolute;
     top: 10px;
@@ -77,6 +78,41 @@ body, html {
     display: flex;
     flex-direction: column;
     gap: 10px;
+    transition: transform 0.3s ease-in-out;
+}
+
+#sidebar.collapsed {
+    transform: translateX(calc(100% + 20px)); /* Уезжает за правый край экрана */
+}
+
+/* Стиль кнопки-переключателя */
+#sidebarToggle {
+    position: absolute;
+    top: 10px;
+    right: 260px; /* Ширина сайдбара (240) + отступ (10) + зазор (10) */
+    z-index: 1001;
+    width: 32px;
+    height: 32px;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 18px;
+    font-weight: bold;
+    box-shadow: 0 2px 5px var(--shadow);
+    transition: right 0.3s ease-in-out, background 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+#sidebarToggle:hover {
+    background: var(--bg-secondary);
+}
+
+#sidebarToggle.collapsed {
+    right: 10px; /* Прилипает к правому краю, когда меню скрыто */
 }
 
 #controls {

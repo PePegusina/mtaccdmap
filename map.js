@@ -13,6 +13,18 @@ function applyTheme(theme) {
     if (btn) btn.textContent = theme === 'dark' ? 'Темная' : 'Светлая';
 }
 
+// === УПРАВЛЕНИЕ САЙДБАРОМ ===
+function toggleSidebar() {
+    const sidebar = document.getElementById('sidebar');
+    const btn = document.getElementById('sidebarToggle');
+
+    sidebar.classList.toggle('collapsed');
+    btn.classList.toggle('collapsed');
+
+    // Меняем стрелку: < когда открыто, > когда закрыто
+    btn.innerHTML = sidebar.classList.contains('collapsed') ? '&gt;' : '&lt;';
+}
+
 function toggleTheme() {
     const current = document.documentElement.getAttribute('data-theme');
     applyTheme(current === 'dark' ? 'light' : 'dark');
