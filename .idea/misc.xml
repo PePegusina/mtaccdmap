@@ -3,4 +3,7 @@
   <component name="AhkProjectSettings">
     <option name="defaultAhkSdk" value="AutoHotkey v1.1.37" />
   </component>
+  <component name="Black">
+    <option name="sdkName" value="Python 3.14 (MTAmap)" />
+  </component>
 </project>

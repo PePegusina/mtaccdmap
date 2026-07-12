@@ -64,6 +64,13 @@ document.getElementById('authPassword').addEventListener('keypress', (e) => {
 const MAP_WIDTH = 6200;
 const MAP_HEIGHT = 4650;
 
+// Кастомная иконка метки
+const customIcon = L.icon({
+    iconUrl: 'pinata.png',
+    iconSize: [32, 48],        // Размер иконки [ширина, высота]
+    iconAnchor: [16, 48],      // Точка привязки к координатам (центр низа)
+    popupAnchor: [0, -45]      // Точка привязки попапа относительно иконки
+
 const map = L.map('map', {
     crs: L.CRS.Simple,
     minZoom: -3,
@@ -123,7 +130,7 @@ map.on('click', async function(e) {
         return;
     }
 
-    const marker = L.marker(e.latlng).addTo(map);
+    const marker = L.marker(e.latlng, { icon: customIcon }).addTo(map);
     const tempId = 'temp_' + Date.now();
 
     marker.bindPopup(`
@@ -299,34 +306,56 @@ function renderPing(id, data) {
 }
 
 // === FIREBASE LISTENERS ===
+// === FIREBASE LISTENERS ===
 function setupFirebaseListeners() {
+    // Загружаем кэш из localStorage для мгновенного отображения
     const cachedMarkers = localStorage.getItem('markers_cache');
     if (cachedMarkers) {
         const cached = JSON.parse(cachedMarkers);
         Object.entries(cached).forEach(([id, m]) => {
             if (!markers[id]) {
-                const marker = L.marker([m.lat, m.lng]).addTo(map);
-                const imgTag = m.imageUrl ? `<img src="${m.imageUrl}" style="max-width:200px;max-height:150px;display:block;margin-bottom:5px;border-radius:4px;" loading="lazy">` : '';
+                const marker = L.marker([m.lat, m.lng], { icon: customIcon }).addTo(map);
+                const imgTag = m.imageUrl
+                    ? `<img src="${m.imageUrl}" style="max-width:200px;max-height:150px;display:block;margin-bottom:5px;border-radius:4px;" loading="lazy">`
+                    : '';
                 marker.bindPopup(`${imgTag}<b>${m.name || 'Без названия'}</b><br>${m.note || ''}`);
-                markers[id] = { marker, name: m.name, note: m.note, lat: m.lat, lng: m.lng, imageUrl: m.imageUrl };
+                markers[id] = {
+                    marker,
+                    name: m.name,
+                    note: m.note,
+                    lat: m.lat,
+                    lng: m.lng,
+                    imageUrl: m.imageUrl
+                };
             }
         });
         updateMarkerList();
     }
 
+    // Слушаем новые метки
     db.ref('markers').on('child_added', (snapshot) => {
         const id = snapshot.key;
         const m = snapshot.val();
         if (!markers[id]) {
-            const marker = L.marker([m.lat, m.lng]).addTo(map);
-            const imgTag = m.imageUrl ? `<img src="${m.imageUrl}" style="max-width:200px;max-height:150px;display:block;margin-bottom:5px;border-radius:4px;" loading="lazy">` : '';
+            const marker = L.marker([m.lat, m.lng], { icon: customIcon }).addTo(map);
+            const imgTag = m.imageUrl
+                ? `<img src="${m.imageUrl}" style="max-width:200px;max-height:150px;display:block;margin-bottom:5px;border-radius:4px;" loading="lazy">`
+                : '';
             marker.bindPopup(`${imgTag}<b>${m.name || 'Без названия'}</b><br>${m.note || ''}`);
-            markers[id] = { marker, name: m.name, note: m.note, lat: m.lat, lng: m.lng, imageUrl: m.imageUrl };
+            markers[id] = {
+                marker,
+                name: m.name,
+                note: m.note,
+                lat: m.lat,
+                lng: m.lng,
+                imageUrl: m.imageUrl
+            };
             updateMarkerList();
             saveCache();
         }
     });
 
+    // Слушаем изменения меток
     db.ref('markers').on('child_changed', (snapshot) => {
         const id = snapshot.key;
         const m = snapshot.val();
@@ -334,13 +363,16 @@ function setupFirebaseListeners() {
             markers[id].name = m.name;
             markers[id].note = m.note;
             markers[id].imageUrl = m.imageUrl;
-            const imgTag = m.imageUrl ? `<img src="${m.imageUrl}" style="max-width:200px;max-height:150px;display:block;margin-bottom:5px;border-radius:4px;" loading="lazy">` : '';
+            const imgTag = m.imageUrl
+                ? `<img src="${m.imageUrl}" style="max-width:200px;max-height:150px;display:block;margin-bottom:5px;border-radius:4px;" loading="lazy">`
+                : '';
             markers[id].marker.setPopupContent(`${imgTag}<b>${m.name || 'Без названия'}</b><br>${m.note || ''}`);
             updateMarkerList();
             saveCache();
         }
     });
 
+    // Слушаем удаления меток
     db.ref('markers').on('child_removed', (snapshot) => {
         const id = snapshot.key;
         if (markers[id]) {
@@ -351,7 +383,10 @@ function setupFirebaseListeners() {
         }
     });
 
+    // Слушаем новые пинги
     db.ref('pings').on('child_added', (snapshot) => renderPing(snapshot.key, snapshot.val()));
+
+    // Слушаем удаления пингов
     db.ref('pings').on('child_removed', (snapshot) => {
         const id = snapshot.key;
         if (pings[id]) {
