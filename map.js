@@ -13,18 +13,6 @@ function applyTheme(theme) {
     if (btn) btn.textContent = theme === 'dark' ? 'Темная' : 'Светлая';
 }
 
-// === УПРАВЛЕНИЕ САЙДБАРОМ ===
-function toggleSidebar() {
-    const sidebar = document.getElementById('sidebar');
-    const btn = document.getElementById('sidebarToggle');
-
-    sidebar.classList.toggle('collapsed');
-    btn.classList.toggle('collapsed');
-
-    // Меняем стрелку: < когда открыто, > когда закрыто
-    btn.innerHTML = sidebar.classList.contains('collapsed') ? '&gt;' : '&lt;';
-}
-
 function toggleTheme() {
     const current = document.documentElement.getAttribute('data-theme');
     applyTheme(current === 'dark' ? 'light' : 'dark');
@@ -77,11 +65,21 @@ const bounds = [[0, 0], [MAP_HEIGHT, MAP_WIDTH]];
 L.imageOverlay('map.webp', bounds).addTo(map);
 map.setView([MAP_HEIGHT / 2, MAP_WIDTH / 2], 0);
 
+// === КАСТОМНАЯ ИКОНКА МЕТКИ ===
+// iconAnchor: [16, 32] — точка "ножки" пиньяты.
+// Если картинка другого размера, подгони значения (ширина/2, высота)
+const customIcon = L.icon({
+    iconUrl: 'pinata.png',
+    iconSize: [80, 80],      // Размер отображения
+    iconAnchor: [40, 80],    // Точка привязки к координатам (низ по центру)
+    popupAnchor: [0, -80]    // Откуда открывается попап (над верхушкой иконки)
+});
+
 // === ХРАНЕНИЕ ДАННЫХ ===
 let markers = {};
 let pings = {};
 let currentEditId = null;
-const PING_DURATION = 300000;
+const PING_DURATION = 900000; // 15 минут
 
 setupFirebaseListeners();
 updateMarkerList();
@@ -123,7 +121,8 @@ map.on('click', async function(e) {
         return;
     }
 
-    const marker = L.marker(e.latlng).addTo(map);
+    // Применяем кастомную иконку
+    const marker = L.marker(e.latlng, { icon: customIcon }).addTo(map);
     const tempId = 'temp_' + Date.now();
 
     marker.bindPopup(`
@@ -305,7 +304,8 @@ function setupFirebaseListeners() {
         const cached = JSON.parse(cachedMarkers);
         Object.entries(cached).forEach(([id, m]) => {
             if (!markers[id]) {
-                const marker = L.marker([m.lat, m.lng]).addTo(map);
+                // Применяем кастомную иконку при загрузке из кэша
+                const marker = L.marker([m.lat, m.lng], { icon: customIcon }).addTo(map);
                 const imgTag = m.imageUrl ? `<img src="${m.imageUrl}" style="max-width:200px;max-height:150px;display:block;margin-bottom:5px;border-radius:4px;" loading="lazy">` : '';
                 marker.bindPopup(`${imgTag}<b>${m.name || 'Без названия'}</b><br>${m.note || ''}`);
                 markers[id] = { marker, name: m.name, note: m.note, lat: m.lat, lng: m.lng, imageUrl: m.imageUrl };
@@ -318,7 +318,8 @@ function setupFirebaseListeners() {
         const id = snapshot.key;
         const m = snapshot.val();
         if (!markers[id]) {
-            const marker = L.marker([m.lat, m.lng]).addTo(map);
+            // Применяем кастомную иконку при загрузке из Firebase
+            const marker = L.marker([m.lat, m.lng], { icon: customIcon }).addTo(map);
             const imgTag = m.imageUrl ? `<img src="${m.imageUrl}" style="max-width:200px;max-height:150px;display:block;margin-bottom:5px;border-radius:4px;" loading="lazy">` : '';
             marker.bindPopup(`${imgTag}<b>${m.name || 'Без названия'}</b><br>${m.note || ''}`);
             markers[id] = { marker, name: m.name, note: m.note, lat: m.lat, lng: m.lng, imageUrl: m.imageUrl };
