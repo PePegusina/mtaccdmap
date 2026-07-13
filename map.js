@@ -6,6 +6,15 @@ function initTheme() {
     applyTheme(theme);
 }
 
+function toggleSidebar() {
+    const sidebar = document.getElementById('sidebar');
+    const btn = document.getElementById('sidebarToggle');
+
+    sidebar.classList.toggle('collapsed');
+    btn.classList.toggle('collapsed');
+    btn.innerHTML = sidebar.classList.contains('collapsed') ? '&gt;' : '&lt;';
+}
+
 function applyTheme(theme) {
     document.documentElement.setAttribute('data-theme', theme);
     localStorage.setItem('theme', theme);
