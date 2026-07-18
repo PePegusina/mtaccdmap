@@ -250,7 +250,15 @@ function updateMarkerList() {
     const list = document.getElementById('markerList');
     if (!list) return;
     list.innerHTML = '';
-    const entries = Object.entries(markers).filter(([id]) => !id.startsWith('temp_'));
+
+    // Фильтруем временные метки и сортируем по имени (алфавит, поддержка кириллицы)
+    const entries = Object.entries(markers)
+        .filter(([id]) => !id.startsWith('temp_'))
+        .sort(([, a], [, b]) => {
+            const nameA = (a.name || 'Без названия').toLowerCase();
+            const nameB = (b.name || 'Без названия').toLowerCase();
+            return nameA.localeCompare(nameB, 'ru');
+        });
 
     if (entries.length === 0) {
         list.innerHTML = '<div class="list-empty">Нет сохранённых меток</div>';
