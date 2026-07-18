@@ -251,13 +251,14 @@ function updateMarkerList() {
     if (!list) return;
     list.innerHTML = '';
 
-    // Фильтруем временные метки и сортируем по имени (алфавит, поддержка кириллицы)
     const entries = Object.entries(markers)
         .filter(([id]) => !id.startsWith('temp_'))
         .sort(([, a], [, b]) => {
-            const nameA = (a.name || 'Без названия').toLowerCase();
-            const nameB = (b.name || 'Без названия').toLowerCase();
-            return nameA.localeCompare(nameB, 'ru');
+            const nameA = a.name || 'Без названия';
+            const nameB = b.name || 'Без названия';
+            // numeric: true — числа сортируются как числа (1, 2, 10, а не 1, 10, 2)
+            // sensitivity: 'base' — игнорирует регистр и диакритику
+            return nameA.localeCompare(nameB, 'ru', { numeric: true, sensitivity: 'base' });
         });
 
     if (entries.length === 0) {
